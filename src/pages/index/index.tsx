@@ -55,6 +55,15 @@ const IndexPage = () => {
         return
       }
 
+      // 🔴 修复：滚动到页面顶部，确保选择器弹出时可见
+      Taro.pageScrollTo({
+        scrollTop: 0,
+        duration: 100,
+      })
+
+      // 等待滚动完成后再弹出选择器
+      await new Promise(resolve => setTimeout(resolve, 150))
+
       let files: any[]
 
       if (config.accept === 'image') {
