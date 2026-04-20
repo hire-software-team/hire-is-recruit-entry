@@ -10,11 +10,12 @@ import { Alert } from '@/components/ui/alert'
 import { Upload, Settings, Camera, ImagePlus, FileText, Trash2 } from 'lucide-react-taro'
 
 interface FileInfo {
-  id: string
   fileType: string
   fileName: string
   filePath: string
   fileSize: number
+  fileKey: string
+  fileMimetype: string
 }
 
 // 文件类型配置
@@ -80,11 +81,12 @@ const IndexPage = () => {
 
           if (data.code === 200) {
             setUploadedFiles(prev => [...prev, {
-              id: data.data.id,
               fileType,
-              fileName: file.name,
+              fileName: data.data.fileName,
               filePath: data.data.url,
-              fileSize: file.size,
+              fileSize: data.data.fileSize,
+              fileKey: data.data.fileKey,
+              fileMimetype: data.data.fileMimetype,
             }])
             Taro.showToast({ title: '上传成功', icon: 'success' })
           } else {
@@ -105,8 +107,8 @@ const IndexPage = () => {
     }
   }
 
-  const handleDeleteFile = (fileId: string) => {
-    setUploadedFiles(prev => prev.filter(f => f.id !== fileId))
+  const handleDeleteFile = (fileKey: string) => {
+    setUploadedFiles(prev => prev.filter(f => f.fileKey !== fileKey))
   }
 
   const handleSubmit = async () => {
@@ -133,7 +135,13 @@ const IndexPage = () => {
         method: 'POST',
         data: {
           name, phone, join_date: joinDate,
-          files: uploadedFiles.map(f => ({ id: f.id, file_type: f.fileType })),
+          files: uploadedFiles.map(f => ({
+            file_type: f.fileType,
+            file_key: f.fileKey,
+            file_name: f.fileName,
+            file_size: f.fileSize,
+            file_mimetype: f.fileMimetype,
+          })),
         },
       })
       console.log('提交响应:', res)
@@ -273,9 +281,9 @@ const IndexPage = () => {
             {getCount('medical_report') > 0 && (
               <View className="mt-3">
                 {uploadedFiles.filter(f => f.fileType === 'medical_report').map(file => (
-                  <View key={file.id} className="bg-gray-50 rounded-lg px-3 py-2 mb-2 flex justify-between items-center">
+                  <View key={file.fileKey} className="bg-gray-50 rounded-lg px-3 py-2 mb-2 flex justify-between items-center">
                     <Text className="block text-sm text-gray-700 flex-1">{file.fileName}</Text>
-                    <View onClick={() => handleDeleteFile(file.id)}>
+                    <View onClick={() => handleDeleteFile(file.fileKey)}>
                       <Trash2 size={16} color="#dc2626" />
                     </View>
                   </View>

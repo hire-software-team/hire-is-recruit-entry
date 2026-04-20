@@ -16,7 +16,6 @@ export class StorageService {
 
     console.log('开始上传文件到 Supabase Storage:', { key, filename, mimetype })
 
-    // 上传到 Supabase Storage
     const { data, error } = await this.supabase.storage
       .from('hr-files')
       .upload(key, buffer, {
@@ -30,15 +29,19 @@ export class StorageService {
 
     console.log('文件上传成功:', key)
 
-    // 获取公开访问 URL
-    const urlData = this.supabase.storage
+    const url = this.getPublicUrl(key)
+
+    return { key, url }
+  }
+
+  /**
+   * 获取文件公开访问 URL
+   */
+  getPublicUrl(key: string): string {
+    const { data } = this.supabase.storage
       .from('hr-files')
       .getPublicUrl(key)
-
-    return {
-      key,
-      url: urlData.data.publicUrl,
-    }
+    return data.publicUrl
   }
 
   /**
@@ -54,7 +57,6 @@ export class StorageService {
       throw new Error(`下载文件失败: ${error.message}`)
     }
 
-    // 将 Blob 转换为 ArrayBuffer，再转换为 Buffer
     if (!data) {
       throw new Error('下载数据为空')
     }

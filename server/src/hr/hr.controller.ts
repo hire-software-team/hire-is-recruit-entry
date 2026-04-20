@@ -4,7 +4,6 @@ import { Response } from 'express'
 import { HrService } from './hr.service'
 import { StorageService } from '../storage/storage.service'
 import * as archiver from 'archiver'
-import { Readable } from 'stream'
 
 @Controller('hr')
 export class HrController {
@@ -14,7 +13,7 @@ export class HrController {
   ) {}
 
   /**
-   * 上传文件
+   * 上传文件（仅上传到对象存储，不写数据库）
    */
   @Post('files/upload')
   @HttpCode(200)
@@ -24,7 +23,7 @@ export class HrController {
       throw new BadRequestException('请上传文件')
     }
 
-    console.log('收到文件上传请求:', file.originalname, '大小:', file.size)
+    console.log('收到文件上传请求:', file.originalname, '大小:', file.size, '类型:', file.mimetype)
 
     // 验证文件大小（最大 10MB）
     const maxSize = 10 * 1024 * 1024
@@ -42,25 +41,18 @@ export class HrController {
       // 上传到对象存储
       const { key, url } = await this.storageService.uploadFile(file.buffer, file.originalname, file.mimetype)
 
-      // 创建临时文件记录
-      const tempFile = await this.hrService.createTempFile({
-        file_type: 'temp', // 临时类型，提交时更新
-        file_key: key,
-        file_name: file.originalname,
-        file_size: file.size,
-        file_type_ext: file.mimetype,
-      })
+      console.log('文件上传成功:', { key, url })
 
-      console.log('文件上传成功:', { id: tempFile.id, url })
-
+      // 只返回存储信息，不写数据库（等提交时一起写入）
       return {
         code: 200,
         msg: 'success',
         data: {
-          id: tempFile.id,
+          fileKey: key,
           url,
           fileName: file.originalname,
           fileSize: file.size,
+          fileMimetype: file.mimetype,
         },
       }
     } catch (error: any) {
@@ -70,7 +62,7 @@ export class HrController {
   }
 
   /**
-   * 提交员工资料
+   * 提交员工资料（同时创建员工记录和文件记录）
    */
   @Post('employees')
   @HttpCode(200)
@@ -78,9 +70,15 @@ export class HrController {
     name: string
     phone: string
     join_date: string
-    files: Array<{ id: number; file_type: string }>
+    files: Array<{
+      file_type: string
+      file_key: string
+      file_name: string
+      file_size: number
+      file_mimetype: string
+    }>
   }) {
-    console.log('收到员工资料提交请求:', body)
+    console.log('收到员工资料提交请求:', JSON.stringify(body).substring(0, 500))
 
     const { name, phone, join_date, files } = body
 
@@ -94,31 +92,27 @@ export class HrController {
     }
 
     try {
-      // 创建员工记录
+      // 1. 创建员工记录
       const employee = await this.hrService.createEmployee({
         name,
         phone,
-        join_date: join_date,
-        files,
+        join_date,
       })
 
-      // 更新文件关联
-      const fileIds = files.map(f => f.id)
-      await this.hrService.updateEmployeeFile(employee.id, fileIds)
+      console.log('员工记录创建成功:', { employeeId: employee.id })
 
-      // 更新文件类型
+      // 2. 批量创建文件记录（关联到该员工）
       for (const file of files) {
-        const { error } = await this.hrService['supabase']
-          .from('employee_files')
-          .update({ file_type: file.file_type })
-          .eq('id', file.id)
-
-        if (error) {
-          console.error('更新文件类型失败:', error)
-        }
+        await this.hrService.createEmployeeFile(employee.id, {
+          file_type: file.file_type,
+          file_key: file.file_key,
+          file_name: file.file_name,
+          file_size: file.file_size,
+          file_type_ext: file.file_mimetype,
+        })
       }
 
-      console.log('员工资料提交成功:', { employeeId: employee.id })
+      console.log('员工资料提交成功:', { employeeId: employee.id, fileCount: files.length })
 
       return {
         code: 200,
@@ -143,7 +137,6 @@ export class HrController {
 
     console.log('收到登录请求:', username)
 
-    // 验证管理员
     const isValid = await this.hrService.validateAdmin(username, password)
 
     if (!isValid) {
@@ -156,7 +149,7 @@ export class HrController {
       code: 200,
       msg: '登录成功',
       data: {
-        token: 'mock-token-' + Date.now(), // 简单的 token
+        token: 'mock-token-' + Date.now(),
         username,
       },
     }
@@ -167,17 +160,15 @@ export class HrController {
    */
   @Get('employees')
   @HttpCode(200)
-  async getEmployeeList(@Headers('authorization') auth: string, @Body() body?: any) {
-    console.log('收到员工列表请求:', body)
+  async getEmployeeList(@Headers('authorization') auth: string) {
+    console.log('收到员工列表请求')
 
-    // 简单验证 token
     if (!auth || !auth.startsWith('Bearer ')) {
       throw new BadRequestException('未授权')
     }
 
     try {
-      const filters = body?.filters || {}
-      const result = await this.hrService.getEmployeeList(filters)
+      const result = await this.hrService.getEmployeeList()
 
       return {
         code: 200,
@@ -198,7 +189,6 @@ export class HrController {
   async getEmployeeDetail(@Param('id') id: string, @Headers('authorization') auth: string) {
     console.log('收到员工详情请求:', id)
 
-    // 简单验证 token
     if (!auth || !auth.startsWith('Bearer ')) {
       throw new BadRequestException('未授权')
     }
@@ -208,12 +198,10 @@ export class HrController {
 
       // 为文件添加公开访问 URL
       const filesWithUrl = result.files.map(file => {
-        const { data } = this.storageService['supabase'].storage
-          .from('hr-files')
-          .getPublicUrl(file.file_key)
+        const urlData = this.storageService.getPublicUrl(file.file_key)
         return {
           ...file,
-          url: data.publicUrl,
+          url: urlData,
         }
       })
 
@@ -238,52 +226,37 @@ export class HrController {
   async downloadEmployeeFiles(@Param('id') id: string, @Headers('authorization') auth: string, @Res() res: Response) {
     console.log('收到打包下载请求:', id)
 
-    // 简单验证 token
     if (!auth || !auth.startsWith('Bearer ')) {
       throw new BadRequestException('未授权')
     }
 
     try {
-      // 获取员工详情
       const { employee, files } = await this.hrService.getEmployeeDetail(Number(id))
 
       if (files.length === 0) {
         throw new NotFoundException('该员工没有上传资料')
       }
 
-      // 设置响应头
       res.setHeader('Content-Type', 'application/zip')
-      res.setHeader('Content-Disposition', `attachment; filename=${employee.name}-资料.zip`)
+      res.setHeader('Content-Disposition', `attachment; filename=${encodeURIComponent(employee.name)}-资料.zip`)
 
-      // 创建 archiver 实例
-      const archive = archiver('zip', {
-        zlib: { level: 9 }, // 最高压缩级别
-      })
+      const archive = archiver('zip', { zlib: { level: 9 } })
 
-      // 监听错误
-      archive.on('error', (err) => {
-        throw err
-      })
+      archive.on('error', (err) => { throw err })
 
-      // 将输出流连接到响应
       archive.pipe(res as unknown as NodeJS.WritableStream)
 
-      // 添加文件到压缩包
       for (const file of files) {
         try {
           const buffer = await this.storageService.downloadFile(file.file_key)
-
-          // 确定文件名
           const fileTypeName = this.getFileTypeName(file.file_type)
           const fileName = `${employee.name}-${fileTypeName}-${file.file_name}`
-
           archive.append(buffer, { name: fileName })
         } catch (error) {
           console.error(`下载文件 ${file.file_name} 失败:`, error)
         }
       }
 
-      // 完成压缩
       await archive.finalize()
 
       console.log('打包下载成功:', { employeeId: id, fileCount: files.length })
@@ -293,9 +266,6 @@ export class HrController {
     }
   }
 
-  /**
-   * 获取文件类型名称
-   */
   private getFileTypeName(fileType: string): string {
     const typeMap: Record<string, string> = {
       id_card_front: '身份证正面',

@@ -6,7 +6,6 @@ interface CreateEmployeeDto {
   name: string
   phone: string
   join_date: string
-  files: Array<{ id: number; file_type: string }>
 }
 
 @Injectable()
@@ -38,7 +37,13 @@ export class HrService {
   /**
    * 创建员工文件记录
    */
-  async createEmployeeFile(employeeId: number, fileData: any): Promise<EmployeeFile> {
+  async createEmployeeFile(employeeId: number, fileData: {
+    file_type: string
+    file_key: string
+    file_name: string
+    file_size: number
+    file_type_ext: string
+  }): Promise<EmployeeFile> {
     const { data, error } = await this.supabase
       .from('employee_files')
       .insert({
@@ -55,34 +60,6 @@ export class HrService {
     if (error) {
       console.error('创建员工文件失败:', error)
       throw new Error(`创建员工文件失败: ${error.message}`)
-    }
-
-    return data as EmployeeFile
-  }
-
-  /**
-   * 创建临时文件记录（文件上传时）
-   */
-  async createTempFile(fileData: {
-    file_type: string
-    file_key: string
-    file_name: string
-    file_size: number
-    file_type_ext: string
-  }): Promise<EmployeeFile> {
-    // 临时员工ID为0，等待员工提交后更新
-    const { data, error } = await this.supabase
-      .from('employee_files')
-      .insert({
-        employee_id: 0, // 临时ID
-        ...fileData,
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('创建临时文件失败:', error)
-      throw new Error(`创建临时文件失败: ${error.message}`)
     }
 
     return data as EmployeeFile
@@ -129,7 +106,6 @@ export class HrService {
    * 获取员工详情
    */
   async getEmployeeDetail(id: number): Promise<{ employee: Employee; files: EmployeeFile[] }> {
-    // 获取员工信息
     const { data: employee, error: empError } = await this.supabase
       .from('employees')
       .select('*')
@@ -141,7 +117,6 @@ export class HrService {
       throw new Error(`获取员工详情失败: ${empError.message}`)
     }
 
-    // 获取员工文件
     const { data: files, error: fileError } = await this.supabase
       .from('employee_files')
       .select('*')
@@ -156,23 +131,6 @@ export class HrService {
     return {
       employee: employee as Employee,
       files: (files as EmployeeFile[]) || [],
-    }
-  }
-
-  /**
-   * 更新员工文件关联（提交时）
-   */
-  async updateEmployeeFile(employeeId: number, fileIds: number[]): Promise<void> {
-    for (const fileId of fileIds) {
-      const { error } = await this.supabase
-        .from('employee_files')
-        .update({ employee_id: employeeId })
-        .eq('id', fileId)
-
-      if (error) {
-        console.error('更新员工文件失败:', error)
-        throw new Error(`更新员工文件失败: ${error.message}`)
-      }
     }
   }
 
@@ -195,8 +153,6 @@ export class HrService {
       return false
     }
 
-    // 简单密码验证（生产环境应该使用 bcrypt 等加密方式）
-    const isValid = data.password === password
-    return isValid
+    return data.password === password
   }
 }
