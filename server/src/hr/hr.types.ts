@@ -3,6 +3,7 @@ export interface Employee {
   id: number
   name: string
   phone: string
+  join_date: string | null
   status: string
   created_at: string
 }
@@ -16,4 +17,5 @@ export interface EmployeeFile {
   file_size: number
   file_type_ext: string
   created_at: string
+  url?: string
 }

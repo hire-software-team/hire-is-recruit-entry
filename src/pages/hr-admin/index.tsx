@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { View, Text } from '@tarojs/components'
+import { View, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
 import { Button } from '@/components/ui/button'
@@ -7,8 +7,46 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Download, Search, LogIn, User, Calendar, Phone } from 'lucide-react-taro'
+import { Separator } from '@/components/ui/separator'
+import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye } from 'lucide-react-taro'
+
+interface EmployeeDetail {
+  employee: {
+    id: number
+    name: string
+    phone: string
+    join_date: string | null
+    status: string
+    created_at: string
+  }
+  files: Array<{
+    id: number
+    file_type: string
+    file_key: string
+    file_name: string
+    file_size: number
+    file_type_ext: string
+    url: string
+  }>
+}
+
+const FILE_TYPE_LABELS: Record<string, string> = {
+  id_card_front: '身份证正面',
+  id_card_back: '身份证背面',
+  degree_cert_1: '学位证书1',
+  degree_cert_2: '学位证书2',
+  degree_cert_3: '学位证书3',
+  degree_cert_4: '学位证书4',
+  medical_report: '体检报告',
+  resignation_proof: '离职证明',
+}
+
+const FILE_TYPE_GROUPS = [
+  { label: '身份证', types: ['id_card_front', 'id_card_back'] },
+  { label: '学位证书', types: ['degree_cert_1', 'degree_cert_2', 'degree_cert_3', 'degree_cert_4'] },
+  { label: '体检报告', types: ['medical_report'] },
+  { label: '离职证明', types: ['resignation_proof'] },
+]
 
 const HrAdminPage = () => {
   const [token, setToken] = useState<string>('')
@@ -17,6 +55,8 @@ const HrAdminPage = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [employees, setEmployees] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const [detail, setDetail] = useState<EmployeeDetail | null>(null)
+  const [searchName, setSearchName] = useState('')
 
   // 登录
   const handleLogin = async () => {
@@ -32,12 +72,12 @@ const HrAdminPage = () => {
         method: 'POST',
         data: { username, password },
       })
+      console.log('登录响应:', res.data)
 
       if (res.data.code === 200) {
         setToken(res.data.data.token)
         setIsLoggedIn(true)
         Taro.showToast({ title: '登录成功', icon: 'success' })
-        // 加载员工列表
         loadEmployeeList(res.data.data.token)
       } else {
         Taro.showToast({ title: res.data.msg || '登录失败', icon: 'none' })
@@ -61,6 +101,7 @@ const HrAdminPage = () => {
           Authorization: `Bearer ${authToken || token}`,
         },
       })
+      console.log('员工列表响应:', res.data)
 
       if (res.data.code === 200) {
         setEmployees(res.data.data.employees || [])
@@ -76,12 +117,29 @@ const HrAdminPage = () => {
   }
 
   // 查看员工详情
-  const viewEmployeeDetail = (employeeId: number) => {
-    Taro.showModal({
-      title: '功能提示',
-      content: `员工ID: ${employeeId}\n详情页面开发中`,
-      showCancel: false,
-    })
+  const viewEmployeeDetail = async (employeeId: number) => {
+    try {
+      setLoading(true)
+      const res = await Network.request({
+        url: `/api/hr/employees/${employeeId}`,
+        method: 'GET',
+        header: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      console.log('员工详情响应:', res.data)
+
+      if (res.data.code === 200) {
+        setDetail(res.data.data)
+      } else {
+        Taro.showToast({ title: res.data.msg || '获取详情失败', icon: 'none' })
+      }
+    } catch (error: any) {
+      console.error('获取员工详情失败:', error)
+      Taro.showToast({ title: '获取详情失败', icon: 'none' })
+    } finally {
+      setLoading(false)
+    }
   }
 
   // 下载员工资料
@@ -89,12 +147,16 @@ const HrAdminPage = () => {
     Taro.showModal({
       title: '下载确认',
       content: `是否下载 ${employeeName} 的所有资料？`,
-      success: async (res) => {
-        if (res.confirm) {
+      success: async (modalRes) => {
+        if (modalRes.confirm) {
           try {
-            // 在 H5 环境中直接跳转下载链接
-            const downloadUrl = `/api/hr/employees/${employeeId}/download`
-            window.open(`http://localhost:3000${downloadUrl}?token=${token}`)
+            // 在 H5 环境中直接使用 window.open 跳转下载链接
+            const downloadUrl = `/api/hr/employees/${employeeId}/download?token=${token}`
+            // @ts-ignore
+            if (typeof window !== 'undefined') {
+              // @ts-ignore
+              window.open(downloadUrl, '_blank')
+            }
             Taro.showToast({ title: '开始下载', icon: 'success' })
           } catch (error) {
             console.error('下载失败:', error)
@@ -103,6 +165,21 @@ const HrAdminPage = () => {
         }
       },
     })
+  }
+
+  // 预览图片
+  const previewImage = (url: string, allImageUrls: string[]) => {
+    Taro.previewImage({
+      current: url,
+      urls: allImageUrls,
+    })
+  }
+
+  // 格式化文件大小
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + 'B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + 'MB'
   }
 
   // 获取状态标签
@@ -117,6 +194,164 @@ const HrAdminPage = () => {
     }
   }
 
+  // 过滤员工列表
+  const filteredEmployees = searchName
+    ? employees.filter((e) => e.name.includes(searchName) || e.phone.includes(searchName))
+    : employees
+
+  // =============== 详情视图 ===============
+  if (detail) {
+    const allImageUrls = detail.files
+      .filter(f => f.file_type_ext?.startsWith('image/'))
+      .map(f => f.url)
+
+    return (
+      <View className="bg-gray-50 min-h-screen">
+        {/* 顶部栏 */}
+        <View className="bg-white border-b border-gray-200 p-4">
+          <View className="flex items-center gap-3">
+            <View onClick={() => setDetail(null)}>
+              <ArrowLeft size={20} color="#374151" />
+            </View>
+            <Text className="block text-lg font-bold text-gray-900">{detail.employee.name} 的资料</Text>
+          </View>
+        </View>
+
+        <View className="p-4">
+          {/* 员工基本信息 */}
+          <Card className="mb-4">
+            <CardContent className="p-4">
+              <Text className="block text-lg font-semibold text-gray-900 mb-3">基本信息</Text>
+              <Separator className="mb-3" />
+              <View className="flex flex-col gap-3">
+                <View className="flex items-center gap-2">
+                  <User size={16} color="#6b7280" />
+                  <Text className="block text-sm text-gray-500 w-16">姓名</Text>
+                  <Text className="block text-sm text-gray-900 font-medium">{detail.employee.name}</Text>
+                </View>
+                <View className="flex items-center gap-2">
+                  <Phone size={16} color="#6b7280" />
+                  <Text className="block text-sm text-gray-500 w-16">手机号</Text>
+                  <Text className="block text-sm text-gray-900 font-medium">{detail.employee.phone}</Text>
+                </View>
+                <View className="flex items-center gap-2">
+                  <Calendar size={16} color="#6b7280" />
+                  <Text className="block text-sm text-gray-500 w-16">入职日期</Text>
+                  <Text className="block text-sm text-gray-900 font-medium">{detail.employee.join_date || '未填写'}</Text>
+                </View>
+                <View className="flex items-center gap-2">
+                  <Text className="block text-sm text-gray-500 w-16">状态</Text>
+                  {getStatusBadge(detail.employee.status)}
+                </View>
+              </View>
+            </CardContent>
+          </Card>
+
+          {/* 资料列表 - 按类型分组 */}
+          {FILE_TYPE_GROUPS.map(group => {
+            const groupFiles = detail.files.filter(f => group.types.includes(f.file_type))
+            if (groupFiles.length === 0) return null
+
+            return (
+              <Card key={group.label} className="mb-4">
+                <CardContent className="p-4">
+                  <View className="flex justify-between items-center mb-3">
+                    <Text className="block text-base font-semibold text-gray-900">{group.label}</Text>
+                    <Text className="block text-xs text-gray-500">{groupFiles.length} 份</Text>
+                  </View>
+                  <Separator className="mb-3" />
+
+                  {/* 图片类型 - 网格展示 */}
+                  {group.label !== '体检报告' && (
+                    <View className="grid grid-cols-2 gap-3">
+                      {group.types.map(type => {
+                        const file = groupFiles.find(f => f.file_type === type)
+                        if (!file) {
+                          return (
+                            <View key={type} className="border-2 border-dashed border-gray-200 rounded-lg p-3 flex flex-col items-center justify-center" style={{ minHeight: '160rpx' }}>
+                              <Text className="block text-xs text-gray-400">{FILE_TYPE_LABELS[type] || type}</Text>
+                              <Text className="block text-xs text-gray-300 mt-1">未上传</Text>
+                            </View>
+                          )
+                        }
+                        const isImage = file.file_type_ext?.startsWith('image/')
+                        return (
+                          <View
+                            key={type}
+                            className="border border-gray-200 rounded-lg overflow-hidden"
+                            onClick={() => isImage && previewImage(file.url, allImageUrls)}
+                          >
+                            {isImage ? (
+                              <Image src={file.url} mode="aspectFill" style={{ width: '100%', height: '200rpx' }} />
+                            ) : (
+                              <View className="p-3 flex flex-col items-center justify-center" style={{ minHeight: '160rpx' }}>
+                                <FileText size={24} color="#6b7280" />
+                              </View>
+                            )}
+                            <View className="p-2">
+                              <Text className="block text-xs text-gray-700 truncate">{FILE_TYPE_LABELS[type] || type}</Text>
+                              <Text className="block text-xs text-gray-400">{formatFileSize(file.file_size)}</Text>
+                            </View>
+                          </View>
+                        )
+                      })}
+                    </View>
+                  )}
+
+                  {/* 体检报告 - 列表展示 */}
+                  {group.label === '体检报告' && (
+                    <View className="flex flex-col gap-2">
+                      {groupFiles.map(file => {
+                        const isImage = file.file_type_ext?.startsWith('image/')
+                        return (
+                          <View key={file.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                            {isImage ? (
+                              <View
+                                className="border border-gray-200 rounded overflow-hidden flex-shrink-0"
+                                onClick={() => previewImage(file.url, allImageUrls)}
+                              >
+                                <Image src={file.url} mode="aspectFill" style={{ width: '120rpx', height: '120rpx' }} />
+                              </View>
+                            ) : (
+                              <View className="flex-shrink-0 p-2 bg-white rounded border border-gray-200">
+                                <FileText size={24} color="#dc2626" />
+                              </View>
+                            )}
+                            <View className="flex-1 min-w-0">
+                              <Text className="block text-sm text-gray-900 truncate">{file.file_name}</Text>
+                              <Text className="block text-xs text-gray-500 mt-1">{formatFileSize(file.file_size)}</Text>
+                            </View>
+                            <View className="flex-shrink-0">
+                              {isImage ? (
+                                <Eye size={18} color="#2563eb" />
+                              ) : (
+                                <FileImage size={18} color="#2563eb" />
+                              )}
+                            </View>
+                          </View>
+                        )
+                      })}
+                    </View>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })}
+
+          {/* 下载按钮 */}
+          <Button
+            className="w-full"
+            onClick={() => downloadEmployeeFiles(detail.employee.id, detail.employee.name)}
+          >
+            <Download size={16} color="#ffffff" className="mr-2" />
+            打包下载全部资料
+          </Button>
+        </View>
+      </View>
+    )
+  }
+
+  // =============== 登录视图 ===============
   if (!isLoggedIn) {
     return (
       <View className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -134,12 +369,14 @@ const HrAdminPage = () => {
             <View className="space-y-4">
               <View>
                 <Label className="mb-2">用户名</Label>
-                <Input
-                  className="w-full"
-                  placeholder="请输入用户名"
-                  value={username}
-                  onInput={(e) => setUsername(e.detail.value)}
-                />
+                <View className="bg-gray-50 rounded-lg px-4 py-3">
+                  <Input
+                    className="w-full bg-transparent"
+                    placeholder="请输入用户名"
+                    value={username}
+                    onInput={(e) => setUsername(e.detail.value)}
+                  />
+                </View>
               </View>
 
               <View>
@@ -176,13 +413,24 @@ const HrAdminPage = () => {
     )
   }
 
+  // =============== 员工列表视图 ===============
   return (
     <View className="min-h-screen bg-gray-50">
-      <View className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10">
-        <Text className="block text-lg font-bold text-gray-900 mb-2">
+      <View className="bg-white border-b border-gray-200 p-4">
+        <Text className="block text-lg font-bold text-gray-900 mb-3">
           HR 管理系统
         </Text>
-        <View className="flex gap-2">
+
+        {/* 搜索栏 */}
+        <View className="flex gap-2 mb-3">
+          <View className="flex-1 bg-gray-50 rounded-lg px-4 py-2">
+            <Input
+              className="w-full bg-transparent"
+              placeholder="搜索姓名或手机号"
+              value={searchName}
+              onInput={(e) => setSearchName(e.detail.value)}
+            />
+          </View>
           <Button
             size="sm"
             variant="outline"
@@ -191,6 +439,10 @@ const HrAdminPage = () => {
             <Search size={14} color="#6b7280" className="mr-1" />
             刷新
           </Button>
+        </View>
+
+        <View className="flex justify-between items-center">
+          <Text className="block text-sm text-gray-500">共 {filteredEmployees.length} 名员工</Text>
           <Button
             size="sm"
             variant="outline"
@@ -203,77 +455,68 @@ const HrAdminPage = () => {
       </View>
 
       <View className="p-4">
-        {employees.length === 0 ? (
+        {filteredEmployees.length === 0 ? (
           <Card>
             <CardContent className="p-8 text-center">
               <Text className="block text-gray-500">
-                暂无员工数据
+                {searchName ? '未找到匹配的员工' : '暂无员工数据'}
               </Text>
             </CardContent>
           </Card>
         ) : (
-          <Card>
-            <CardContent className="p-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-24">姓名</TableHead>
-                    <TableHead className="w-32">手机号</TableHead>
-                    <TableHead className="w-24">状态</TableHead>
-                    <TableHead className="w-32">提交时间</TableHead>
-                    <TableHead className="w-32">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {employees.map((employee) => (
-                    <TableRow key={employee.id}>
-                      <TableCell>
-                        <View className="flex items-center gap-2">
-                          <User size={16} color="#6b7280" />
-                          <Text className="font-medium">{employee.name}</Text>
-                        </View>
-                      </TableCell>
-                      <TableCell>
-                        <View className="flex items-center gap-2">
-                          <Phone size={16} color="#6b7280" />
-                          <Text className="text-sm">{employee.phone}</Text>
-                        </View>
-                      </TableCell>
-                      <TableCell>
-                        {getStatusBadge(employee.status)}
-                      </TableCell>
-                      <TableCell>
-                        <View className="flex items-center gap-2">
-                          <Calendar size={16} color="#6b7280" />
-                          <Text className="text-xs text-gray-600">
-                            {new Date(employee.created_at).toLocaleDateString()}
-                          </Text>
-                        </View>
-                      </TableCell>
-                      <TableCell>
-                        <View className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => viewEmployeeDetail(employee.id)}
-                          >
-                            查看
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => downloadEmployeeFiles(employee.id, employee.name)}
-                          >
-                            <Download size={14} color="#6b7280" />
-                          </Button>
-                        </View>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <View className="flex flex-col gap-3">
+            {filteredEmployees.map((employee) => (
+              <Card key={employee.id}>
+                <CardContent className="p-4">
+                  <View className="flex justify-between items-start mb-3">
+                    <View className="flex items-center gap-2">
+                      <User size={18} color="#2563eb" />
+                      <Text className="block text-base font-semibold text-gray-900">{employee.name}</Text>
+                      {getStatusBadge(employee.status)}
+                    </View>
+                    <Text className="block text-xs text-gray-400">
+                      {new Date(employee.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+
+                  <View className="flex items-center gap-4 mb-3">
+                    <View className="flex items-center gap-1">
+                      <Phone size={14} color="#9ca3af" />
+                      <Text className="block text-sm text-gray-600">{employee.phone}</Text>
+                    </View>
+                    {employee.join_date && (
+                      <View className="flex items-center gap-1">
+                        <Calendar size={14} color="#9ca3af" />
+                        <Text className="block text-sm text-gray-600">{employee.join_date}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <Separator className="mb-3" />
+
+                  <View className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => viewEmployeeDetail(employee.id)}
+                    >
+                      <Eye size={14} color="#ffffff" className="mr-1" />
+                      查看资料
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => downloadEmployeeFiles(employee.id, employee.name)}
+                    >
+                      <Download size={14} color="#6b7280" className="mr-1" />
+                      打包下载
+                    </Button>
+                  </View>
+                </CardContent>
+              </Card>
+            ))}
+          </View>
         )}
       </View>
     </View>

@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, Body, UseInterceptors, UploadedFile, HttpCode, NotFoundException, BadRequestException, Headers, Res } from '@nestjs/common'
+import { Controller, Post, Get, Param, Query, Body, UseInterceptors, UploadedFile, HttpCode, NotFoundException, BadRequestException, Headers, Res } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { Response } from 'express'
 import { HrService } from './hr.service'
@@ -43,7 +43,6 @@ export class HrController {
 
       console.log('文件上传成功:', { key, url })
 
-      // 只返回存储信息，不写数据库（等提交时一起写入）
       return {
         code: 200,
         msg: 'success',
@@ -58,6 +57,52 @@ export class HrController {
     } catch (error: any) {
       console.error('文件上传失败:', error)
       throw new BadRequestException(error.message || '文件上传失败')
+    }
+  }
+
+  /**
+   * 通过手机号查找员工（用于员工再次打开小程序时恢复数据）
+   */
+  @Get('employees/lookup')
+  @HttpCode(200)
+  async lookupEmployee(@Query('phone') phone: string) {
+    console.log('收到员工查找请求, phone:', phone)
+
+    if (!phone) {
+      throw new BadRequestException('请提供手机号')
+    }
+
+    try {
+      const result = await this.hrService.lookupByPhone(phone)
+
+      if (!result) {
+        return {
+          code: 200,
+          msg: '未找到员工记录',
+          data: null,
+        }
+      }
+
+      // 为文件添加公开访问 URL
+      const filesWithUrl = result.files.map(file => {
+        const url = this.storageService.getPublicUrl(file.file_key)
+        return {
+          ...file,
+          url,
+        }
+      })
+
+      return {
+        code: 200,
+        msg: 'success',
+        data: {
+          employee: result.employee,
+          files: filesWithUrl,
+        },
+      }
+    } catch (error: any) {
+      console.error('查找员工失败:', error)
+      throw new BadRequestException(error.message || '查找员工失败')
     }
   }
 
@@ -198,10 +243,10 @@ export class HrController {
 
       // 为文件添加公开访问 URL
       const filesWithUrl = result.files.map(file => {
-        const urlData = this.storageService.getPublicUrl(file.file_key)
+        const url = this.storageService.getPublicUrl(file.file_key)
         return {
           ...file,
-          url: urlData,
+          url,
         }
       })
 
@@ -223,10 +268,12 @@ export class HrController {
    * 打包下载员工所有资料
    */
   @Get('employees/:id/download')
-  async downloadEmployeeFiles(@Param('id') id: string, @Headers('authorization') auth: string, @Res() res: Response) {
+  async downloadEmployeeFiles(@Param('id') id: string, @Headers('authorization') auth: string, @Query('token') queryToken: string, @Res() res: Response) {
     console.log('收到打包下载请求:', id)
 
-    if (!auth || !auth.startsWith('Bearer ')) {
+    // 支持通过 header 或 query 参数传递 token
+    const token = auth?.startsWith('Bearer ') ? auth : (queryToken ? `Bearer ${queryToken}` : '')
+    if (!token) {
       throw new BadRequestException('未授权')
     }
 
@@ -238,7 +285,8 @@ export class HrController {
       }
 
       res.setHeader('Content-Type', 'application/zip')
-      res.setHeader('Content-Disposition', `attachment; filename=${encodeURIComponent(employee.name)}-资料.zip`)
+      const safeName = employee.name.replace(/[^\w\u4e00-\u9fa5]/g, '')
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(safeName + '-资料.zip')}`)
 
       const archive = archiver('zip', { zlib: { level: 9 } })
 
@@ -250,7 +298,8 @@ export class HrController {
         try {
           const buffer = await this.storageService.downloadFile(file.file_key)
           const fileTypeName = this.getFileTypeName(file.file_type)
-          const fileName = `${employee.name}-${fileTypeName}-${file.file_name}`
+          const ext = file.file_name.split('.').pop() || ''
+          const fileName = `${employee.name}-${fileTypeName}.${ext}`
           archive.append(buffer, { name: fileName })
         } catch (error) {
           console.error(`下载文件 ${file.file_name} 失败:`, error)

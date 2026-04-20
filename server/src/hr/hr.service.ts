@@ -21,6 +21,7 @@ export class HrService {
       .insert({
         name: dto.name,
         phone: dto.phone,
+        join_date: dto.join_date,
         status: 'submitted',
       })
       .select()
@@ -63,6 +64,40 @@ export class HrService {
     }
 
     return data as EmployeeFile
+  }
+
+  /**
+   * 通过手机号查找员工
+   */
+  async lookupByPhone(phone: string): Promise<{ employee: Employee; files: EmployeeFile[] } | null> {
+    const { data: employees, error: empError } = await this.supabase
+      .from('employees')
+      .select('*')
+      .eq('phone', phone)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (empError || !employees || employees.length === 0) {
+      return null
+    }
+
+    const employee = employees[0] as Employee
+
+    const { data: files, error: fileError } = await this.supabase
+      .from('employee_files')
+      .select('*')
+      .eq('employee_id', employee.id)
+      .order('created_at', { ascending: true })
+
+    if (fileError) {
+      console.error('查找员工文件失败:', fileError)
+      return { employee, files: [] }
+    }
+
+    return {
+      employee,
+      files: (files as EmployeeFile[]) || [],
+    }
   }
 
   /**
