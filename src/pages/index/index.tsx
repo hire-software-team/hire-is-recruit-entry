@@ -55,15 +55,6 @@ const IndexPage = () => {
         return
       }
 
-      // 🔴 修复：滚动到页面顶部，确保选择器弹出时可见
-      Taro.pageScrollTo({
-        scrollTop: 0,
-        duration: 100,
-      })
-
-      // 等待滚动完成后再弹出选择器
-      await new Promise(resolve => setTimeout(resolve, 150))
-
       let files: any[]
 
       if (config.accept === 'image') {
@@ -261,21 +252,22 @@ const IndexPage = () => {
   }
 
   return (
-    <View className="min-h-screen bg-gray-50 p-4 pb-8">
-      <View className="mb-4 flex justify-between items-center">
-        <View>
-          <Text className="block text-xl font-bold text-gray-900 mb-2">新员工资料上传</Text>
-          <Text className="block text-sm text-gray-600">请填写基本信息并上传相关资料</Text>
+    <View className="h-screen flex flex-col bg-gray-50">
+      <View className="flex-1 overflow-y-auto p-4 pb-8">
+        <View className="mb-4 flex justify-between items-center">
+          <View>
+            <Text className="block text-xl font-bold text-gray-900 mb-2">新员工资料上传</Text>
+            <Text className="block text-sm text-gray-600">请填写基本信息并上传相关资料</Text>
+          </View>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => Taro.navigateTo({ url: '/pages/hr-admin/index' })}
+          >
+            <Settings size={14} color="#6b7280" className="mr-1" />
+            HR管理
+          </Button>
         </View>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => Taro.navigateTo({ url: '/pages/hr-admin/index' })}
-        >
-          <Settings size={14} color="#6b7280" className="mr-1" />
-          HR管理
-        </Button>
-      </View>
 
       <Alert className="mb-4">
         <Upload size={16} color="#6b7280" />
