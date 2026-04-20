@@ -90,6 +90,7 @@ export default defineConfig<'vite'>(async (merge, _env) => {
     outputRoot,
     plugins: ['@tarojs/plugin-generator', ...buildMiniCIPluginConfig()],
     defineConstants: {
+      ENABLE_INNER_HTML: 'true',
       PROJECT_DOMAIN: JSON.stringify(
         process.env.PROJECT_DOMAIN ||
           process.env.COZE_PROJECT_DOMAIN_DEFAULT ||

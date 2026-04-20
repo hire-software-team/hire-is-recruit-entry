@@ -269,9 +269,9 @@ const IndexPage = () => {
           </Button>
         </View>
 
-      <Alert className="mb-4">
-        <Upload size={16} color="#6b7280" />
-        <Text className="block text-sm ml-2">
+        <Alert className="mb-4">
+          <Upload size={16} color="#6b7280" />
+          <Text className="block text-sm ml-2">
           请确保上传的资料清晰可见，提交后无法修改
         </Text>
       </Alert>
@@ -457,6 +457,7 @@ const IndexPage = () => {
       >
         {isUploading ? '提交中...' : '提交资料'}
       </Button>
+      </View>
     </View>
   )
 }
