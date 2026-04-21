@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { getSupabaseClient } from '../storage/database/supabase-client'
 import { Employee, EmployeeFile } from './hr.types'
+import { LLMClient, Config } from 'coze-coding-dev-sdk'
 
 interface CreateEmployeeDto {
   name: string
@@ -8,9 +9,57 @@ interface CreateEmployeeDto {
   join_date: string
 }
 
+interface VerifyResult {
+  verified: boolean
+  documentTypeMatch: boolean
+  isClear: boolean
+  reason: string
+}
+
+// 证件类型描述映射
+const DOCUMENT_TYPE_PROMPTS: Record<string, { label: string; description: string }> = {
+  id_card_front: {
+    label: '身份证正面（人像面）',
+    description: '中国居民身份证人像面，包含姓名、性别、民族、出生日期、住址、公民身份号码等信息，右上角有国徽',
+  },
+  id_card_back: {
+    label: '身份证背面（国徽面）',
+    description: '中国居民身份证国徽面，包含签发机关和有效期限，上方有国徽图案',
+  },
+  degree_cert_1: {
+    label: '学位证书',
+    description: '中国学位证书或毕业证书，包含姓名、学位/学历名称、颁发院校、颁发日期、证书编号等',
+  },
+  degree_cert_2: {
+    label: '学位证书',
+    description: '中国学位证书或毕业证书，包含姓名、学位/学历名称、颁发院校、颁发日期、证书编号等',
+  },
+  degree_cert_3: {
+    label: '学位证书',
+    description: '中国学位证书或毕业证书，包含姓名、学位/学历名称、颁发院校、颁发日期、证书编号等',
+  },
+  degree_cert_4: {
+    label: '学位证书',
+    description: '中国学位证书或毕业证书，包含姓名、学位/学历名称、颁发院校、颁发日期、证书编号等',
+  },
+  resignation_proof: {
+    label: '离职证明',
+    description: '离职证明或解除劳动关系证明，包含员工姓名、入职/离职日期、原单位名称、公章等',
+  },
+}
+
+// 不需要校验的文件类型（体检报告格式多样，PDF无法图像识别）
+const SKIP_VERIFICATION_TYPES = ['medical_report']
+
 @Injectable()
 export class HrService {
   private supabase = getSupabaseClient()
+  private llmClient: LLMClient
+
+  constructor() {
+    const config = new Config()
+    this.llmClient = new LLMClient(config)
+  }
 
   /**
    * 创建员工记录
@@ -189,5 +238,89 @@ export class HrService {
     }
 
     return data.password === password
+  }
+
+  /**
+   * 校验证件图片是否合规
+   * @param imageUrl 图片公开访问 URL
+   * @param fileType 文件类型标识（如 id_card_front）
+   * @returns 校验结果
+   */
+  async verifyDocumentImage(imageUrl: string, fileType: string): Promise<VerifyResult | null> {
+    // 体检报告跳过校验
+    if (SKIP_VERIFICATION_TYPES.includes(fileType)) {
+      return null
+    }
+
+    const docInfo = DOCUMENT_TYPE_PROMPTS[fileType]
+    if (!docInfo) {
+      // 未知类型也跳过校验
+      return null
+    }
+
+    const systemPrompt = `你是一个专业的证件图像审核助手。你需要判断用户上传的图片是否符合指定的证件类型要求，以及图像是否清晰可辨。
+
+目标证件类型：${docInfo.label}
+证件特征描述：${docInfo.description}
+
+请严格按照以下JSON格式输出，不要输出任何其他内容：
+{"passed":true或false,"documentTypeMatch":true或false,"isClear":true或false,"reason":"不通过的具体原因，通过时为空字符串"}
+
+判断规则：
+1. documentTypeMatch：图片内容是否与目标证件类型匹配。如果图片是其他类型的证件、或者不是证件，则为false。
+2. isClear：图像是否清晰可辨。如果图像严重模糊、过度遮挡、严重反光、过暗无法辨认，则为false。
+3. passed = documentTypeMatch && isClear
+4. reason：不通过时给出具体原因，例如"图片内容不是身份证正面"或"图像模糊不清，请重新拍摄"。通过时为空字符串。`
+
+    try {
+      console.log('开始校验证件图片:', { fileType, imageUrl: imageUrl.substring(0, 100) })
+
+      const messages = [
+        { role: 'system' as const, content: systemPrompt },
+        {
+          role: 'user' as const,
+          content: [
+            { type: 'text' as const, text: '请审核这张图片是否符合要求' },
+            {
+              type: 'image_url' as const,
+              image_url: { url: imageUrl, detail: 'low' as const },
+            },
+          ],
+        },
+      ]
+
+      const response = await this.llmClient.invoke(messages, {
+        model: 'doubao-seed-2-0-mini-260215',
+        temperature: 0.1,
+        thinking: 'disabled',
+      })
+
+      console.log('大模型校验原始返回:', response.content)
+
+      // 解析 JSON 结果
+      const content = response.content.trim()
+      // 尝试提取 JSON（模型可能在 JSON 外围加了 markdown 代码块）
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        console.error('无法从模型返回中提取 JSON:', content)
+        return null
+      }
+
+      const result = JSON.parse(jsonMatch[0])
+
+      const verifyResult: VerifyResult = {
+        verified: Boolean(result.passed),
+        documentTypeMatch: Boolean(result.documentTypeMatch),
+        isClear: Boolean(result.isClear),
+        reason: String(result.reason || ''),
+      }
+
+      console.log('证件校验结果:', verifyResult)
+      return verifyResult
+    } catch (error) {
+      console.error('证件校验调用大模型失败:', error)
+      // 模型调用失败时返回 null，前端视为跳过校验
+      return null
+    }
   }
 }

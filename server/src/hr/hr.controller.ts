@@ -14,16 +14,20 @@ export class HrController {
 
   /**
    * 上传文件（仅上传到对象存储，不写数据库）
+   * 图片类型文件会调用大模型进行证件校验
    */
   @Post('files/upload')
   @HttpCode(200)
   @UseInterceptors(FileInterceptor('file'))
-  async uploadFile(@UploadedFile() file: Express.Multer.File) {
+  async uploadFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('fileType') fileType: string,
+  ) {
     if (!file) {
       throw new BadRequestException('请上传文件')
     }
 
-    console.log('收到文件上传请求:', file.originalname, '大小:', file.size, '类型:', file.mimetype)
+    console.log('收到文件上传请求:', file.originalname, '大小:', file.size, '类型:', file.mimetype, '文件类型:', fileType)
 
     // 验证文件大小（最大 10MB）
     const maxSize = 10 * 1024 * 1024
@@ -43,6 +47,18 @@ export class HrController {
 
       console.log('文件上传成功:', { key, url })
 
+      // 图片类型文件进行大模型校验
+      let verification: {
+        verified: boolean
+        documentTypeMatch: boolean
+        isClear: boolean
+        reason: string
+      } | null = null
+
+      if (fileType && file.mimetype.startsWith('image/')) {
+        verification = await this.hrService.verifyDocumentImage(url, fileType)
+      }
+
       return {
         code: 200,
         msg: 'success',
@@ -52,6 +68,7 @@ export class HrController {
           fileName: file.originalname,
           fileSize: file.size,
           fileMimetype: file.mimetype,
+          verification,
         },
       }
     } catch (error: any) {

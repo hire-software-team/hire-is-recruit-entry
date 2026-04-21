@@ -20,6 +20,13 @@ interface FileInfo {
   fileMimetype: string
 }
 
+interface VerificationResult {
+  verified: boolean
+  documentTypeMatch: boolean
+  isClear: boolean
+  reason: string
+}
+
 // 文件类型配置
 const FILE_TYPE_CONFIG = {
   id_card_front: { name: '身份证正面', required: true, maxCount: 1, accept: 'image' as const },
@@ -56,6 +63,8 @@ const IndexPage = () => {
   const [joinDate, setJoinDate] = useState('')
   const [uploadedFiles, setUploadedFiles] = useState<FileInfo[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  // 校验结果：fileKey -> result
+  const [verificationResults, setVerificationResults] = useState<Map<string, VerificationResult>>(new Map())
   // 已提交状态：员工已提交资料后，显示只读视图
   const [submittedData, setSubmittedData] = useState<{
     employee: any
@@ -86,11 +95,9 @@ const IndexPage = () => {
 
       if (res.data.code === 200 && res.data.data) {
         setSubmittedData(res.data.data)
-        // 填充表单数据
         setName(res.data.data.employee.name || '')
         setPhone(res.data.data.employee.phone || '')
         setJoinDate(res.data.data.employee.join_date || '')
-        // 填充文件数据
         const files: FileInfo[] = (res.data.data.files || []).map(f => ({
           fileType: f.file_type,
           fileName: f.file_name,
@@ -110,7 +117,7 @@ const IndexPage = () => {
 
   // 选择并上传文件
   const handleChooseFile = async (fileType: string) => {
-    if (submittedData) return // 已提交后不可修改
+    if (submittedData) return
 
     const config = FILE_TYPE_CONFIG[fileType]
     if (!config) return
@@ -144,8 +151,10 @@ const IndexPage = () => {
       for (const file of files) {
         try {
           console.log('上传文件:', file.name, '大小:', file.size, '路径:', file.path)
+
+          // 上传时传递 fileType 参数，后端会进行图像校验
           const uploadRes = await Network.uploadFile({
-            url: '/api/hr/files/upload',
+            url: `/api/hr/files/upload?fileType=${encodeURIComponent(fileType)}`,
             filePath: file.path,
             name: 'file',
           })
@@ -153,15 +162,40 @@ const IndexPage = () => {
           console.log('上传响应:', data)
 
           if (data.code === 200) {
-            setUploadedFiles(prev => [...prev, {
-              fileType,
-              fileName: data.data.fileName,
-              filePath: data.data.url,
-              fileSize: data.data.fileSize,
-              fileKey: data.data.fileKey,
-              fileMimetype: data.data.fileMimetype,
-            }])
-            Taro.showToast({ title: '上传成功', icon: 'success' })
+            const fileKey = data.data.fileKey
+            const verification: VerificationResult | null = data.data.verification
+
+            if (verification && !verification.verified) {
+              // 校验未通过 - 提示用户，不添加到已上传列表
+              console.log('证件校验未通过:', verification.reason)
+              Taro.showModal({
+                title: '资料校验未通过',
+                content: verification.reason || '上传的图片不符合要求，请重新上传',
+                showCancel: false,
+                confirmText: '我知道了',
+              })
+            } else {
+              // 校验通过或跳过校验 - 添加到已上传列表
+              setUploadedFiles(prev => [...prev, {
+                fileType,
+                fileName: data.data.fileName,
+                filePath: data.data.url,
+                fileSize: data.data.fileSize,
+                fileKey,
+                fileMimetype: data.data.fileMimetype,
+              }])
+
+              // 记录校验结果
+              if (verification) {
+                setVerificationResults(prev => new Map(prev).set(fileKey, verification))
+              }
+
+              if (verification) {
+                Taro.showToast({ title: '校验通过', icon: 'success' })
+              } else {
+                Taro.showToast({ title: '上传成功', icon: 'success' })
+              }
+            }
           } else {
             throw new Error(data.msg || '上传失败')
           }
@@ -183,6 +217,11 @@ const IndexPage = () => {
   const handleDeleteFile = (fileKey: string) => {
     if (submittedData) return
     setUploadedFiles(prev => prev.filter(f => f.fileKey !== fileKey))
+    setVerificationResults(prev => {
+      const next = new Map(prev)
+      next.delete(fileKey)
+      return next
+    })
   }
 
   const handleSubmit = async () => {
@@ -220,9 +259,7 @@ const IndexPage = () => {
       })
       console.log('提交响应:', res)
       if (res.data.code === 200) {
-        // 保存手机号到本地存储，下次打开时恢复数据
         Taro.setStorageSync('employeePhone', phone)
-        // 切换到已提交视图
         setSubmittedData({
           employee: { name, phone, join_date: joinDate, status: 'submitted' },
           files: uploadedFiles.map(f => ({
@@ -273,7 +310,7 @@ const IndexPage = () => {
       // 已提交状态 - 只读展示
       return (
         <View
-          className="border border-gray-200 rounded-lg overflow-hidden"
+          className="border border-gray-200 rounded-lg overflow-hidden relative"
           onClick={() => isImage && file.filePath && previewImage(file.filePath)}
         >
           {isImage && file.filePath ? (
@@ -292,16 +329,27 @@ const IndexPage = () => {
     }
 
     // 编辑状态
+    const verifyResult = file ? verificationResults.get(file.fileKey) : undefined
+
     return (
       <View
-        className="border-2 border-dashed rounded-lg p-3 flex flex-col items-center justify-center"
+        className="border-2 border-dashed rounded-lg p-3 flex flex-col items-center justify-center relative"
         style={{ borderColor: isUploaded ? '#16a34a' : '#d1d5db', minHeight: '128rpx' }}
         onClick={() => handleChooseFile(fileType)}
       >
         {isUploaded ? (
           <View className="text-center">
-            <Camera size={24} color="#16a34a" className="mx-auto mb-1" />
-            <Text className="block text-xs text-green-600">{label}</Text>
+            {verifyResult?.verified ? (
+              <>
+                <CircleCheck size={24} color="#16a34a" className="mx-auto mb-1" />
+                <Text className="block text-xs text-green-600">{label}</Text>
+              </>
+            ) : (
+              <>
+                <Camera size={24} color="#16a34a" className="mx-auto mb-1" />
+                <Text className="block text-xs text-green-600">{label}</Text>
+              </>
+            )}
           </View>
         ) : (
           <View className="text-center">
@@ -460,7 +508,7 @@ const IndexPage = () => {
 
       <Alert className="mb-4">
         <Upload size={16} color="#6b7280" />
-        <Text className="block text-sm ml-2">请确保上传的资料清晰可见，提交后无法修改</Text>
+        <Text className="block text-sm ml-2">上传的证件照将由AI自动校验，请确保资料清晰可见</Text>
       </Alert>
 
       {/* 基本信息 */}
@@ -524,7 +572,7 @@ const IndexPage = () => {
               <Text className="block text-base font-medium text-gray-900">体检报告（必传）</Text>
               <Text className="block text-xs text-gray-500">{getCount('medical_report')} 份</Text>
             </View>
-            <Button className="w-full" variant="outline" onClick={() => handleChooseFile('medical_report')}>
+            <Button className="w-full" variant="outline" onClick={() => handleChooseFile('medical_report')} disabled={isUploading}>
               <FileText size={16} color="#6b7280" className="mr-2" />
               添加体检报告（PDF或图片）
             </Button>
