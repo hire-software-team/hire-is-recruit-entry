@@ -143,22 +143,72 @@ const HrAdminPage = () => {
   }
 
   // 下载员工资料
-  const downloadEmployeeFiles = (employeeId: number, employeeName: string) => {
+  const downloadEmployeeFiles = async (employeeId: number, employeeName: string) => {
     Taro.showModal({
       title: '下载确认',
       content: `是否下载 ${employeeName} 的所有资料？`,
       success: async (modalRes) => {
         if (modalRes.confirm) {
           try {
-            // 在 H5 环境中直接使用 window.open 跳转下载链接
-            const downloadUrl = `/api/hr/employees/${employeeId}/download?token=${token}`
-            // @ts-ignore
-            if (typeof window !== 'undefined') {
-              // @ts-ignore
-              window.open(downloadUrl, '_blank')
+            const isMiniApp = [Taro.ENV_TYPE.WEAPP as string, Taro.ENV_TYPE.TT as string].includes(Taro.getEnv() as string)
+
+            if (isMiniApp) {
+              // 小程序环境：使用 downloadFile + saveFile + openDocument
+              Taro.showLoading({ title: '打包下载中...' })
+              const downloadRes = await Network.downloadFile({
+                url: `/api/hr/employees/${employeeId}/download`,
+                header: {
+                  Authorization: `Bearer ${token}`,
+                },
+              })
+              console.log('下载结果:', downloadRes)
+
+              if (downloadRes.statusCode === 200) {
+                const tempFilePath = downloadRes.tempFilePath
+                Taro.hideLoading()
+                try {
+                  const saveRes: any = await Taro.saveFile({ tempFilePath })
+                  Taro.openDocument({
+                    filePath: saveRes.savedFilePath || tempFilePath,
+                    fileType: 'zip' as any,
+                    fail: () => Taro.showToast({ title: '文件已保存', icon: 'success' }),
+                  })
+                } catch {
+                  Taro.openDocument({
+                    filePath: tempFilePath,
+                    fileType: 'zip' as any,
+                    fail: () => Taro.showToast({ title: '下载完成', icon: 'success' }),
+                  })
+                }
+              } else {
+                Taro.hideLoading()
+                Taro.showToast({ title: '下载失败', icon: 'none' })
+              }
+            } else {
+              // H5 环境：通过 fetch 获取 blob 再下载
+              Taro.showLoading({ title: '打包下载中...' })
+              const downloadUrl = `/api/hr/employees/${employeeId}/download?token=${encodeURIComponent(token)}`
+
+              const res = await fetch(downloadUrl)
+              Taro.hideLoading()
+
+              if (res.ok) {
+                const blob = await res.blob()
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `${employeeName}-资料.zip`
+                document.body.appendChild(a)
+                a.click()
+                document.body.removeChild(a)
+                URL.revokeObjectURL(url)
+                Taro.showToast({ title: '下载成功', icon: 'success' })
+              } else {
+                Taro.showToast({ title: '下载失败', icon: 'none' })
+              }
             }
-            Taro.showToast({ title: '开始下载', icon: 'success' })
           } catch (error) {
+            Taro.hideLoading()
             console.error('下载失败:', error)
             Taro.showToast({ title: '下载失败', icon: 'none' })
           }
