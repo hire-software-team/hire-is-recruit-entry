@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Upload, Settings, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User, GraduationCap } from 'lucide-react-taro'
+import { Upload, Settings, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User, GraduationCap, LoaderCircle } from 'lucide-react-taro'
 
 interface FileInfo {
   fileType: string
@@ -37,7 +37,10 @@ const EDUCATION_OPTIONS = [
   { value: 'doctor', label: '博士生' },
 ]
 
-// 文件类型配置（身份证、体检报告、离职证明）
+// 不需要AI校验的文件类型
+const SKIP_VERIFY_TYPES = ['medical_report']
+
+// 文件类型配置（身份证、体检报告、离职证明、银行卡）
 const FILE_TYPE_CONFIG: Record<string, { name: string; required: boolean; maxCount: number; accept: 'image' | 'all' }> = {
   id_card_front: { name: '身份证正面', required: true, maxCount: 1, accept: 'image' },
   id_card_back: { name: '身份证背面', required: true, maxCount: 1, accept: 'image' },
@@ -111,6 +114,7 @@ const IndexPage = () => {
   const [joinDate, setJoinDate] = useState('')
   const [uploadedFiles, setUploadedFiles] = useState<FileInfo[]>([])
   const [isUploading, setIsUploading] = useState(false)
+  const [verifyingType, setVerifyingType] = useState<string | null>(null)
   const [verificationResults, setVerificationResults] = useState<Map<string, VerificationResult>>(new Map())
   const [submittedData, setSubmittedData] = useState<{
     employee: any
@@ -224,6 +228,13 @@ const IndexPage = () => {
         try {
           console.log('上传文件:', file.name, '大小:', file.size, '路径:', file.path, '类型:', fileType)
 
+          // 判断是否需要AI校验（图片类型都需要）
+          const needsVerify = config.accept === 'image' && !SKIP_VERIFY_TYPES.includes(fileType)
+          if (needsVerify) {
+            setVerifyingType(fileType)
+            Taro.showToast({ title: 'AI校验中，请稍候...', icon: 'none', duration: 10000 })
+          }
+
           // 上传时传递 fileType 和 education 参数
           const uploadRes = await Network.uploadFile({
             url: `/api/hr/files/upload?fileType=${encodeURIComponent(fileType)}&education=${encodeURIComponent(education)}`,
@@ -232,6 +243,10 @@ const IndexPage = () => {
           })
           const data = JSON.parse(uploadRes.data as string)
           console.log('上传响应:', data)
+
+          // 隐藏校验中的toast
+          Taro.hideToast()
+          setVerifyingType(null)
 
           if (data.code === 200) {
             const fileKey = data.data.fileKey
@@ -270,12 +285,15 @@ const IndexPage = () => {
           }
         } catch (error: any) {
           console.error('上传失败:', error)
+          Taro.hideToast()
+          setVerifyingType(null)
           Taro.showToast({ title: error.message || '上传失败', icon: 'none' })
         }
       }
       setIsUploading(false)
     } catch (error: any) {
       setIsUploading(false)
+      setVerifyingType(null)
       if (error.errMsg && !error.errMsg.includes('cancel')) {
         console.error('选择文件失败:', error)
         Taro.showToast({ title: '选择文件失败', icon: 'none' })
@@ -392,6 +410,21 @@ const IndexPage = () => {
     const file = uploadedFiles.find(f => f.fileType === fileType)
     const isImage = file?.fileMimetype?.startsWith('image/')
     const verifyResult = file ? verificationResults.get(file.fileKey) : undefined
+    const isVerifying = verifyingType === fileType
+
+    if (isVerifying) {
+      // AI校验中
+      return (
+        <View className="border-2 border-blue-300 rounded-lg overflow-hidden relative" style={{ minHeight: '200rpx' }}>
+          <View className="absolute inset-0 bg-blue-50 bg-opacity-80 flex flex-col items-center justify-center">
+            <View className="animate-spin">
+              <LoaderCircle size={28} color="#2563eb" />
+            </View>
+            <Text className="block text-xs text-blue-600 mt-2">AI校验中...</Text>
+          </View>
+        </View>
+      )
+    }
 
     if (isUploaded && file) {
       // 已上传 - 展示预览
