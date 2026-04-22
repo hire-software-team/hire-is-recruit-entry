@@ -49,6 +49,8 @@ const FILE_TYPE_LABELS: Record<string, string> = {
   doctor_degree: '博士学位证书',
   medical_report: '体检报告',
   resignation_proof: '离职证明',
+  bank_card_front: '银行卡正面',
+  bank_card_back: '银行卡反面',
   // 兼容旧命名
   degree_cert_1: '学位证书1',
   degree_cert_2: '学位证书2',
@@ -61,6 +63,7 @@ const FILE_TYPE_GROUPS = [
   { label: '学历学位证书', types: ['diploma', 'degree', 'master_diploma', 'master_degree', 'doctor_diploma', 'doctor_degree', 'degree_cert_1', 'degree_cert_2', 'degree_cert_3', 'degree_cert_4'] },
   { label: '体检报告', types: ['medical_report'] },
   { label: '离职证明', types: ['resignation_proof'] },
+  { label: '银行卡', types: ['bank_card_front', 'bank_card_back'] },
 ]
 
 const HrAdminPage = () => {

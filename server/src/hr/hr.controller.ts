@@ -347,6 +347,8 @@ export class HrController {
       doctor_degree: '博士学位证书',
       medical_report: '体检报告',
       resignation_proof: '离职证明',
+      bank_card_front: '银行卡正面',
+      bank_card_back: '银行卡反面',
       // 兼容旧命名
       degree_cert_1: '学位证书1',
       degree_cert_2: '学位证书2',

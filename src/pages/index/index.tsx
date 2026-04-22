@@ -39,8 +39,10 @@ const EDUCATION_OPTIONS = [
 const FILE_TYPE_CONFIG: Record<string, { name: string; required: boolean; maxCount: number; accept: 'image' | 'all' }> = {
   id_card_front: { name: '身份证正面', required: true, maxCount: 1, accept: 'image' },
   id_card_back: { name: '身份证背面', required: true, maxCount: 1, accept: 'image' },
-  medical_report: { name: '体检报告', required: true, maxCount: 999, accept: 'all' },
+  medical_report: { name: '体检报告', required: true, maxCount: 5, accept: 'all' },
   resignation_proof: { name: '离职证明', required: true, maxCount: 1, accept: 'image' },
+  bank_card_front: { name: '银行卡正面', required: true, maxCount: 1, accept: 'image' },
+  bank_card_back: { name: '银行卡反面', required: true, maxCount: 1, accept: 'image' },
 }
 
 // 学历学位证书槽位定义（固定6个，根据学历决定显示哪些）
@@ -84,6 +86,8 @@ const FILE_TYPE_LABELS: Record<string, string> = {
   doctor_degree: '博士学位证书',
   medical_report: '体检报告',
   resignation_proof: '离职证明',
+  bank_card_front: '银行卡正面',
+  bank_card_back: '银行卡反面',
   degree_cert_1: '学位证书1',
   degree_cert_2: '学位证书2',
   degree_cert_3: '学位证书3',
@@ -95,6 +99,7 @@ const FILE_TYPE_GROUPS = [
   { label: '学历学位证书', types: ['diploma', 'degree', 'master_diploma', 'master_degree', 'doctor_diploma', 'doctor_degree'] },
   { label: '体检报告', types: ['medical_report'] },
   { label: '离职证明', types: ['resignation_proof'] },
+  { label: '银行卡', types: ['bank_card_front', 'bank_card_back'] },
 ]
 
 const IndexPage = () => {
@@ -702,9 +707,18 @@ const IndexPage = () => {
           </View>
 
           {/* 离职证明 */}
-          <View className="mb-2">
+          <View className="mb-6">
             <Text className="block text-base font-medium text-gray-900 mb-3">离职证明（必传）</Text>
             {renderSlot('resignation_proof', '离职证明')}
+          </View>
+
+          {/* 银行卡 */}
+          <View className="mb-2">
+            <Text className="block text-base font-medium text-gray-900 mb-3">银行卡（必传）</Text>
+            <View className="grid grid-cols-2 gap-3">
+              {renderSlot('bank_card_front', '银行卡正面')}
+              {renderSlot('bank_card_back', '银行卡反面')}
+            </View>
           </View>
         </CardContent>
       </Card>

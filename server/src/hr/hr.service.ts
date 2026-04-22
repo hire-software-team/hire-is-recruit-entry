@@ -33,6 +33,14 @@ const DOCUMENT_TYPE_PROMPTS: Record<string, { label: string; description: string
     label: '离职证明',
     description: '离职证明或解除劳动关系证明，包含员工姓名、入职/离职日期、原单位名称、公章等',
   },
+  bank_card_front: {
+    label: '银行卡正面',
+    description: '银行卡正面照，包含银行卡号、持卡人姓名拼音、卡组织标识（如银联/VISA/Mastercard）、发卡银行名称或logo等信息',
+  },
+  bank_card_back: {
+    label: '银行卡反面',
+    description: '银行卡反面照，包含磁条或芯片区域、签名栏、客服电话、安全码区域等信息',
+  },
 }
 
 // 学历学位证书的 Prompt 根据 education 动态生成
