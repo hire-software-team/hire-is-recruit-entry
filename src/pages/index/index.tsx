@@ -23,6 +23,8 @@ interface FileInfo {
 interface VerificationResult {
   verified: boolean
   documentTypeMatch: boolean
+  isComplete: boolean
+  isTextLegible: boolean
   isClear: boolean
   reason: string
 }

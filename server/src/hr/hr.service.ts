@@ -13,6 +13,8 @@ interface CreateEmployeeDto {
 interface VerifyResult {
   verified: boolean
   documentTypeMatch: boolean
+  isComplete: boolean
+  isTextLegible: boolean
   isClear: boolean
   reason: string
 }
@@ -318,19 +320,21 @@ export class HrService {
       return null
     }
 
-    const systemPrompt = `你是一个专业的证件图像审核助手。你需要判断用户上传的图片是否符合指定的证件类型要求，以及图像是否清晰可辨。
+    const systemPrompt = `你是一个专业的证件图像审核助手。你需要严格判断用户上传的图片是否符合指定的证件类型要求，证件是否完整，文字是否清晰可识别。
 
 目标证件类型：${docInfo.label}
 证件特征描述：${docInfo.description}
 
 请严格按照以下JSON格式输出，不要输出任何其他内容：
-{"passed":true或false,"documentTypeMatch":true或false,"isClear":true或false,"reason":"不通过的具体原因，通过时为空字符串"}
+{"passed":true或false,"documentTypeMatch":true或false,"isComplete":true或false,"isTextLegible":true或false,"isClear":true或false,"reason":"不通过的具体原因，通过时为空字符串"}
 
-判断规则：
+判断规则（必须逐项严格检查）：
 1. documentTypeMatch：图片内容是否与目标证件类型匹配。如果图片是其他类型的证件、或者不是证件，则为false。
-2. isClear：图像是否清晰可辨。如果图像严重模糊、过度遮挡、严重反光、过暗无法辨认，则为false。
-3. passed = documentTypeMatch && isClear
-4. reason：不通过时给出具体原因，例如"图片内容不是身份证正面"或"图像模糊不清，请重新拍摄"。通过时为空字符串。`
+2. isComplete：证件是否完整展示。以下情况为false：证件被裁切只显示部分区域、证件边缘被遮挡导致关键信息缺失、证件折叠或破损导致内容不完整。
+3. isTextLegible：证件上的文字是否清晰可识别。以下情况为false：文字模糊无法辨认具体内容、文字因拍摄角度倾斜导致严重变形、文字被手指或其他物体遮挡、文字因反光或阴影导致无法读取。
+4. isClear：整体图像质量是否合格。以下情况为false：图像严重模糊（对焦不清）、过度遮挡、严重反光导致大面积信息丢失、过暗或过曝无法辨认。
+5. passed = documentTypeMatch && isComplete && isTextLegible && isClear
+6. reason：不通过时给出具体原因，必须指出具体哪项不通过及详细说明。例如"证件不完整，右上角被裁切"或"证件上的姓名和身份证号模糊无法识别，请重新拍摄"。通过时为空字符串。`
 
     try {
       console.log('开始校验证件图片:', { fileType, education, imageUrl: imageUrl.substring(0, 100) })
@@ -369,6 +373,8 @@ export class HrService {
       const verifyResult: VerifyResult = {
         verified: Boolean(result.passed),
         documentTypeMatch: Boolean(result.documentTypeMatch),
+        isComplete: Boolean(result.isComplete),
+        isTextLegible: Boolean(result.isTextLegible),
         isClear: Boolean(result.isClear),
         reason: String(result.reason || ''),
       }
