@@ -8,13 +8,14 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye } from 'lucide-react-taro'
+import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye, GraduationCap } from 'lucide-react-taro'
 
 interface EmployeeDetail {
   employee: {
     id: number
     name: string
     phone: string
+    education: string | null
     join_date: string | null
     status: string
     created_at: string
@@ -30,20 +31,34 @@ interface EmployeeDetail {
   }>
 }
 
+const EDUCATION_LABELS: Record<string, string> = {
+  below_bachelor: '本科以下',
+  bachelor: '本科',
+  master: '研究生',
+  doctor: '博士生',
+}
+
 const FILE_TYPE_LABELS: Record<string, string> = {
   id_card_front: '身份证正面',
   id_card_back: '身份证背面',
+  diploma: '学历证书',
+  degree: '学位证书',
+  master_diploma: '硕士学历证书',
+  master_degree: '硕士学位证书',
+  doctor_diploma: '博士学历证书',
+  doctor_degree: '博士学位证书',
+  medical_report: '体检报告',
+  resignation_proof: '离职证明',
+  // 兼容旧命名
   degree_cert_1: '学位证书1',
   degree_cert_2: '学位证书2',
   degree_cert_3: '学位证书3',
   degree_cert_4: '学位证书4',
-  medical_report: '体检报告',
-  resignation_proof: '离职证明',
 }
 
 const FILE_TYPE_GROUPS = [
   { label: '身份证', types: ['id_card_front', 'id_card_back'] },
-  { label: '学位证书', types: ['degree_cert_1', 'degree_cert_2', 'degree_cert_3', 'degree_cert_4'] },
+  { label: '学历学位证书', types: ['diploma', 'degree', 'master_diploma', 'master_degree', 'doctor_diploma', 'doctor_degree', 'degree_cert_1', 'degree_cert_2', 'degree_cert_3', 'degree_cert_4'] },
   { label: '体检报告', types: ['medical_report'] },
   { label: '离职证明', types: ['resignation_proof'] },
 ]
@@ -283,6 +298,11 @@ const HrAdminPage = () => {
                   <Phone size={16} color="#6b7280" />
                   <Text className="block text-sm text-gray-500 w-16">手机号</Text>
                   <Text className="block text-sm text-gray-900 font-medium">{detail.employee.phone}</Text>
+                </View>
+                <View className="flex items-center gap-2">
+                  <GraduationCap size={16} color="#6b7280" />
+                  <Text className="block text-sm text-gray-500 w-16">学历</Text>
+                  <Text className="block text-sm text-gray-900 font-medium">{EDUCATION_LABELS[detail.employee.education || ''] || detail.employee.education || '未填写'}</Text>
                 </View>
                 <View className="flex items-center gap-2">
                   <Calendar size={16} color="#6b7280" />
@@ -534,6 +554,12 @@ const HrAdminPage = () => {
                       <Phone size={14} color="#9ca3af" />
                       <Text className="block text-sm text-gray-600">{employee.phone}</Text>
                     </View>
+                    {employee.education && (
+                      <View className="flex items-center gap-1">
+                        <GraduationCap size={14} color="#9ca3af" />
+                        <Text className="block text-sm text-gray-600">{EDUCATION_LABELS[employee.education] || employee.education}</Text>
+                      </View>
+                    )}
                     {employee.join_date && (
                       <View className="flex items-center gap-1">
                         <Calendar size={14} color="#9ca3af" />

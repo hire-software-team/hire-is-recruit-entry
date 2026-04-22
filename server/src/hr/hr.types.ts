@@ -3,6 +3,7 @@ export interface Employee {
   id: number
   name: string
   phone: string
+  education: string | null
   join_date: string | null
   status: string
   created_at: string

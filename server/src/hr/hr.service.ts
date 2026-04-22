@@ -6,6 +6,7 @@ import { LLMClient, Config } from 'coze-coding-dev-sdk'
 interface CreateEmployeeDto {
   name: string
   phone: string
+  education: string
   join_date: string
 }
 
@@ -16,7 +17,9 @@ interface VerifyResult {
   reason: string
 }
 
-// 证件类型描述映射
+// 证件类型描述映射（用于 AI 校验）
+// key = fileType，value = { label, description }
+// 其中 diploma 和 degree 需要根据 education 动态调整描述
 const DOCUMENT_TYPE_PROMPTS: Record<string, { label: string; description: string }> = {
   id_card_front: {
     label: '身份证正面（人像面）',
@@ -26,29 +29,64 @@ const DOCUMENT_TYPE_PROMPTS: Record<string, { label: string; description: string
     label: '身份证背面（国徽面）',
     description: '中国居民身份证国徽面，包含签发机关和有效期限，上方有国徽图案',
   },
-  degree_cert_1: {
-    label: '学位证书',
-    description: '中国学位证书或毕业证书，包含姓名、学位/学历名称、颁发院校、颁发日期、证书编号等',
-  },
-  degree_cert_2: {
-    label: '学位证书',
-    description: '中国学位证书或毕业证书，包含姓名、学位/学历名称、颁发院校、颁发日期、证书编号等',
-  },
-  degree_cert_3: {
-    label: '学位证书',
-    description: '中国学位证书或毕业证书，包含姓名、学位/学历名称、颁发院校、颁发日期、证书编号等',
-  },
-  degree_cert_4: {
-    label: '学位证书',
-    description: '中国学位证书或毕业证书，包含姓名、学位/学历名称、颁发院校、颁发日期、证书编号等',
-  },
   resignation_proof: {
     label: '离职证明',
     description: '离职证明或解除劳动关系证明，包含员工姓名、入职/离职日期、原单位名称、公章等',
   },
 }
 
-// 不需要校验的文件类型（体检报告格式多样，PDF无法图像识别）
+// 学历学位证书的 Prompt 根据 education 动态生成
+function getEduCertPrompt(fileType: string, education: string): { label: string; description: string } | null {
+  const eduLabelMap: Record<string, string> = {
+    below_bachelor: '大专/职高/高中',
+    bachelor: '本科',
+    master: '硕士',
+    doctor: '博士',
+  }
+
+  switch (fileType) {
+    case 'diploma':
+      if (education === 'below_bachelor') {
+        return {
+          label: '学历证书',
+          description: '中国学历证书（毕业证书），包含姓名、学历层次（如大专、职高、高中、中专等）、专业、学校名称、颁发日期等。注意：不要求是本科学历，接受大专、职高、高中、中专等各种层次的学历证书',
+        }
+      }
+      return {
+        label: '本科学历证书',
+        description: '中国本科学历证书（毕业证书），包含姓名、学历层次为本科、专业、学校名称、颁发日期等',
+      }
+    case 'degree':
+      return {
+        label: '本科学位证书',
+        description: '中国学士学位证书，包含姓名、学位名称为学士、颁发院校、颁发日期、证书编号等',
+      }
+    case 'master_diploma':
+      return {
+        label: '硕士学历证书',
+        description: '中国硕士研究生学历证书（毕业证书），包含姓名、学历层次为硕士/研究生、专业、学校名称、颁发日期等',
+      }
+    case 'master_degree':
+      return {
+        label: '硕士学位证书',
+        description: '中国硕士学位证书，包含姓名、学位名称为硕士、颁发院校、颁发日期、证书编号等',
+      }
+    case 'doctor_diploma':
+      return {
+        label: '博士学历证书',
+        description: '中国博士研究生学历证书（毕业证书），包含姓名、学历层次为博士/研究生、专业、学校名称、颁发日期等',
+      }
+    case 'doctor_degree':
+      return {
+        label: '博士学位证书',
+        description: '中国博士学位证书，包含姓名、学位名称为博士、颁发院校、颁发日期、证书编号等',
+      }
+    default:
+      return null
+  }
+}
+
+// 不需要校验的文件类型
 const SKIP_VERIFICATION_TYPES = ['medical_report']
 
 @Injectable()
@@ -70,6 +108,7 @@ export class HrService {
       .insert({
         name: dto.name,
         phone: dto.phone,
+        education: dto.education,
         join_date: dto.join_date,
         status: 'submitted',
       })
@@ -243,18 +282,31 @@ export class HrService {
   /**
    * 校验证件图片是否合规
    * @param imageUrl 图片公开访问 URL
-   * @param fileType 文件类型标识（如 id_card_front）
+   * @param fileType 文件类型标识
+   * @param education 学历（用于动态调整学历学位证书的校验 Prompt）
    * @returns 校验结果
    */
-  async verifyDocumentImage(imageUrl: string, fileType: string): Promise<VerifyResult | null> {
+  async verifyDocumentImage(imageUrl: string, fileType: string, education?: string): Promise<VerifyResult | null> {
     // 体检报告跳过校验
     if (SKIP_VERIFICATION_TYPES.includes(fileType)) {
       return null
     }
 
-    const docInfo = DOCUMENT_TYPE_PROMPTS[fileType]
+    // 获取校验 Prompt
+    let docInfo = DOCUMENT_TYPE_PROMPTS[fileType]
+
+    // 学历学位证书类型：根据 education 动态获取
     if (!docInfo) {
-      // 未知类型也跳过校验
+      if (education) {
+        const eduPrompt = getEduCertPrompt(fileType, education)
+        if (eduPrompt) {
+          docInfo = eduPrompt
+        }
+      }
+    }
+
+    if (!docInfo) {
+      // 未知类型跳过校验
       return null
     }
 
@@ -273,7 +325,7 @@ export class HrService {
 4. reason：不通过时给出具体原因，例如"图片内容不是身份证正面"或"图像模糊不清，请重新拍摄"。通过时为空字符串。`
 
     try {
-      console.log('开始校验证件图片:', { fileType, imageUrl: imageUrl.substring(0, 100) })
+      console.log('开始校验证件图片:', { fileType, education, imageUrl: imageUrl.substring(0, 100) })
 
       const messages = [
         { role: 'system' as const, content: systemPrompt },
@@ -297,9 +349,7 @@ export class HrService {
 
       console.log('大模型校验原始返回:', response.content)
 
-      // 解析 JSON 结果
       const content = response.content.trim()
-      // 尝试提取 JSON（模型可能在 JSON 外围加了 markdown 代码块）
       const jsonMatch = content.match(/\{[\s\S]*\}/)
       if (!jsonMatch) {
         console.error('无法从模型返回中提取 JSON:', content)
@@ -319,7 +369,6 @@ export class HrService {
       return verifyResult
     } catch (error) {
       console.error('证件校验调用大模型失败:', error)
-      // 模型调用失败时返回 null，前端视为跳过校验
       return null
     }
   }

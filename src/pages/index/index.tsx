@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Upload, Settings, Camera, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User } from 'lucide-react-taro'
+import { Upload, Settings, Camera, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User, GraduationCap } from 'lucide-react-taro'
 
 interface FileInfo {
   fileType: string
@@ -27,32 +27,72 @@ interface VerificationResult {
   reason: string
 }
 
-// 文件类型配置
-const FILE_TYPE_CONFIG = {
-  id_card_front: { name: '身份证正面', required: true, maxCount: 1, accept: 'image' as const },
-  id_card_back: { name: '身份证背面', required: true, maxCount: 1, accept: 'image' as const },
-  degree_cert_1: { name: '学位证书 1', required: true, maxCount: 1, accept: 'image' as const },
-  degree_cert_2: { name: '学位证书 2', required: true, maxCount: 1, accept: 'image' as const },
-  degree_cert_3: { name: '学位证书 3', required: true, maxCount: 1, accept: 'image' as const },
-  degree_cert_4: { name: '学位证书 4', required: true, maxCount: 1, accept: 'image' as const },
-  medical_report: { name: '体检报告', required: true, maxCount: 999, accept: 'all' as const },
-  resignation_proof: { name: '离职证明', required: true, maxCount: 1, accept: 'image' as const },
+// 学历选项
+const EDUCATION_OPTIONS = [
+  { value: 'below_bachelor', label: '本科以下' },
+  { value: 'bachelor', label: '本科' },
+  { value: 'master', label: '研究生' },
+  { value: 'doctor', label: '博士生' },
+]
+
+// 文件类型配置（身份证、体检报告、离职证明）
+const FILE_TYPE_CONFIG: Record<string, { name: string; required: boolean; maxCount: number; accept: 'image' | 'all' }> = {
+  id_card_front: { name: '身份证正面', required: true, maxCount: 1, accept: 'image' },
+  id_card_back: { name: '身份证背面', required: true, maxCount: 1, accept: 'image' },
+  medical_report: { name: '体检报告', required: true, maxCount: 999, accept: 'all' },
+  resignation_proof: { name: '离职证明', required: true, maxCount: 1, accept: 'image' },
 }
 
+// 学历学位证书槽位定义（固定6个，根据学历决定显示哪些）
+const EDU_CERT_SLOTS = [
+  { key: 'diploma', labelBelowBachelor: '学历证书', labelDefault: '本科学历证书' },
+  { key: 'degree', labelBelowBachelor: '学位证书', labelDefault: '本科学位证书' },
+  { key: 'master_diploma', labelBelowBachelor: '硕士学历证书', labelDefault: '硕士学历证书' },
+  { key: 'master_degree', labelBelowBachelor: '硕士学位证书', labelDefault: '硕士学位证书' },
+  { key: 'doctor_diploma', labelBelowBachelor: '博士学历证书', labelDefault: '博士学历证书' },
+  { key: 'doctor_degree', labelBelowBachelor: '博士学位证书', labelDefault: '博士学位证书' },
+]
+
+// 根据学历获取可见的槽位索引范围
+function getEduSlotRange(education: string): { start: number; end: number } {
+  switch (education) {
+    case 'below_bachelor': return { start: 0, end: 0 }  // 1个
+    case 'bachelor': return { start: 0, end: 1 }          // 2个
+    case 'master': return { start: 0, end: 3 }            // 4个
+    case 'doctor': return { start: 0, end: 5 }            // 6个
+    default: return { start: 0, end: -1 }                  // 0个（未选择学历）
+  }
+}
+
+// 根据学历获取槽位标签
+function getSlotLabel(slot: typeof EDU_CERT_SLOTS[0], education: string): string {
+  if (education === 'below_bachelor' && slot.key === 'diploma') {
+    return slot.labelBelowBachelor
+  }
+  return slot.labelDefault
+}
+
+// 所有文件类型的标签映射（用于HR后台兼容）
 const FILE_TYPE_LABELS: Record<string, string> = {
   id_card_front: '身份证正面',
   id_card_back: '身份证背面',
+  diploma: '学历证书',
+  degree: '学位证书',
+  master_diploma: '硕士学历证书',
+  master_degree: '硕士学位证书',
+  doctor_diploma: '博士学历证书',
+  doctor_degree: '博士学位证书',
+  medical_report: '体检报告',
+  resignation_proof: '离职证明',
   degree_cert_1: '学位证书1',
   degree_cert_2: '学位证书2',
   degree_cert_3: '学位证书3',
   degree_cert_4: '学位证书4',
-  medical_report: '体检报告',
-  resignation_proof: '离职证明',
 }
 
 const FILE_TYPE_GROUPS = [
   { label: '身份证', types: ['id_card_front', 'id_card_back'] },
-  { label: '学位证书', types: ['degree_cert_1', 'degree_cert_2', 'degree_cert_3', 'degree_cert_4'] },
+  { label: '学历学位证书', types: ['diploma', 'degree', 'master_diploma', 'master_degree', 'doctor_diploma', 'doctor_degree'] },
   { label: '体检报告', types: ['medical_report'] },
   { label: '离职证明', types: ['resignation_proof'] },
 ]
@@ -60,12 +100,11 @@ const FILE_TYPE_GROUPS = [
 const IndexPage = () => {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [education, setEducation] = useState('')
   const [joinDate, setJoinDate] = useState('')
   const [uploadedFiles, setUploadedFiles] = useState<FileInfo[]>([])
   const [isUploading, setIsUploading] = useState(false)
-  // 校验结果：fileKey -> result
   const [verificationResults, setVerificationResults] = useState<Map<string, VerificationResult>>(new Map())
-  // 已提交状态：员工已提交资料后，显示只读视图
   const [submittedData, setSubmittedData] = useState<{
     employee: any
     files: any[]
@@ -94,10 +133,12 @@ const IndexPage = () => {
       console.log('查找员工响应:', res.data)
 
       if (res.data.code === 200 && res.data.data) {
+        const emp = res.data.data.employee
         setSubmittedData(res.data.data)
-        setName(res.data.data.employee.name || '')
-        setPhone(res.data.data.employee.phone || '')
-        setJoinDate(res.data.data.employee.join_date || '')
+        setName(emp.name || '')
+        setPhone(emp.phone || '')
+        setEducation(emp.education || '')
+        setJoinDate(emp.join_date || '')
         const files: FileInfo[] = (res.data.data.files || []).map(f => ({
           fileType: f.file_type,
           fileName: f.file_name,
@@ -115,11 +156,35 @@ const IndexPage = () => {
     }
   }
 
+  // 学历变更时，清空已上传的学历学位证书
+  const handleEducationChange = (e) => {
+    const newEdu = EDUCATION_OPTIONS[e.detail.value]?.value || ''
+    setEducation(newEdu)
+    // 清空学历学位证书相关文件
+    const eduKeys = EDU_CERT_SLOTS.map(s => s.key)
+    setUploadedFiles(prev => prev.filter(f => !eduKeys.includes(f.fileType)))
+    setVerificationResults(prev => {
+      const next = new Map(prev)
+      for (const key of eduKeys) {
+        // 删除相关校验结果
+        for (const [k] of next) {
+          const file = uploadedFiles.find(f => f.fileKey === k && f.fileType === key)
+          if (file) next.delete(k)
+        }
+      }
+      return next
+    })
+  }
+
   // 选择并上传文件
   const handleChooseFile = async (fileType: string) => {
     if (submittedData) return
 
-    const config = FILE_TYPE_CONFIG[fileType]
+    const isEduCert = EDU_CERT_SLOTS.some(s => s.key === fileType)
+    const config = isEduCert
+      ? { name: FILE_TYPE_LABELS[fileType] || fileType, required: true, maxCount: 1, accept: 'image' as const }
+      : FILE_TYPE_CONFIG[fileType]
+
     if (!config) return
 
     const currentCount = uploadedFiles.filter(f => f.fileType === fileType).length
@@ -150,11 +215,11 @@ const IndexPage = () => {
       setIsUploading(true)
       for (const file of files) {
         try {
-          console.log('上传文件:', file.name, '大小:', file.size, '路径:', file.path)
+          console.log('上传文件:', file.name, '大小:', file.size, '路径:', file.path, '类型:', fileType)
 
-          // 上传时传递 fileType 参数，后端会进行图像校验
+          // 上传时传递 fileType 和 education 参数
           const uploadRes = await Network.uploadFile({
-            url: `/api/hr/files/upload?fileType=${encodeURIComponent(fileType)}`,
+            url: `/api/hr/files/upload?fileType=${encodeURIComponent(fileType)}&education=${encodeURIComponent(education)}`,
             filePath: file.path,
             name: 'file',
           })
@@ -166,7 +231,6 @@ const IndexPage = () => {
             const verification: VerificationResult | null = data.data.verification
 
             if (verification && !verification.verified) {
-              // 校验未通过 - 提示用户，不添加到已上传列表
               console.log('证件校验未通过:', verification.reason)
               Taro.showModal({
                 title: '资料校验未通过',
@@ -175,7 +239,6 @@ const IndexPage = () => {
                 confirmText: '我知道了',
               })
             } else {
-              // 校验通过或跳过校验 - 添加到已上传列表
               setUploadedFiles(prev => [...prev, {
                 fileType,
                 fileName: data.data.fileName,
@@ -185,7 +248,6 @@ const IndexPage = () => {
                 fileMimetype: data.data.fileMimetype,
               }])
 
-              // 记录校验结果
               if (verification) {
                 setVerificationResults(prev => new Map(prev).set(fileKey, verification))
               }
@@ -227,13 +289,27 @@ const IndexPage = () => {
   const handleSubmit = async () => {
     if (!name.trim()) { Taro.showToast({ title: '请输入姓名', icon: 'none' }); return }
     if (!phone.trim()) { Taro.showToast({ title: '请输入手机号', icon: 'none' }); return }
+    if (!education) { Taro.showToast({ title: '请选择学历', icon: 'none' }); return }
     if (!joinDate) { Taro.showToast({ title: '请选择入职日期', icon: 'none' }); return }
 
+    // 校验身份证和离职证明
     const missingFiles: string[] = []
     for (const [type, config] of Object.entries(FILE_TYPE_CONFIG)) {
       if (!config.required) continue
       const count = uploadedFiles.filter(f => f.fileType === type).length
       if (count === 0) missingFiles.push(config.name)
+    }
+
+    // 校验学历学位证书
+    if (education) {
+      const range = getEduSlotRange(education)
+      for (let i = range.start; i <= range.end; i++) {
+        const slot = EDU_CERT_SLOTS[i]
+        const count = uploadedFiles.filter(f => f.fileType === slot.key).length
+        if (count === 0) {
+          missingFiles.push(getSlotLabel(slot, education))
+        }
+      }
     }
 
     if (missingFiles.length > 0) {
@@ -247,7 +323,7 @@ const IndexPage = () => {
         url: '/api/hr/employees',
         method: 'POST',
         data: {
-          name, phone, join_date: joinDate,
+          name, phone, education, join_date: joinDate,
           files: uploadedFiles.map(f => ({
             file_type: f.fileType,
             file_key: f.fileKey,
@@ -261,7 +337,7 @@ const IndexPage = () => {
       if (res.data.code === 200) {
         Taro.setStorageSync('employeePhone', phone)
         setSubmittedData({
-          employee: { name, phone, join_date: joinDate, status: 'submitted' },
+          employee: { name, phone, education, join_date: joinDate, status: 'submitted' },
           files: uploadedFiles.map(f => ({
             file_type: f.fileType,
             file_name: f.fileName,
@@ -290,14 +366,17 @@ const IndexPage = () => {
     Taro.previewImage({ current: url, urls: allImageUrls })
   }
 
-  // 获取某类型已上传数量
   const getCount = (fileType: string) => uploadedFiles.filter(f => f.fileType === fileType).length
 
-  // 格式化文件大小
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + 'B'
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'
     return (bytes / (1024 * 1024)).toFixed(1) + 'MB'
+  }
+
+  // 获取学历显示文本
+  const getEducationLabel = (value: string) => {
+    return EDUCATION_OPTIONS.find(o => o.value === value)?.label || ''
   }
 
   // 渲染单个上传槽位
@@ -305,6 +384,7 @@ const IndexPage = () => {
     const isUploaded = getCount(fileType) > 0
     const file = uploadedFiles.find(f => f.fileType === fileType)
     const isImage = file?.fileMimetype?.startsWith('image/')
+    const verifyResult = file ? verificationResults.get(file.fileKey) : undefined
 
     if (submittedData && isUploaded && file) {
       // 已提交状态 - 只读展示
@@ -329,8 +409,6 @@ const IndexPage = () => {
     }
 
     // 编辑状态
-    const verifyResult = file ? verificationResults.get(file.fileKey) : undefined
-
     return (
       <View
         className="border-2 border-dashed rounded-lg p-3 flex flex-col items-center justify-center relative"
@@ -365,6 +443,35 @@ const IndexPage = () => {
     setJoinDate(e.detail.value)
   }
 
+  // 渲染学历学位证书区域
+  const renderEduCertSection = () => {
+    if (!education) {
+      return (
+        <View className="mb-6">
+          <Text className="block text-base font-medium text-gray-900 mb-3">学历学位证书（必传）</Text>
+          <View className="border border-gray-200 rounded-lg p-4">
+            <Text className="block text-sm text-gray-400 text-center">请先选择学历</Text>
+          </View>
+        </View>
+      )
+    }
+
+    const range = getEduSlotRange(education)
+    const visibleSlots = EDU_CERT_SLOTS.slice(range.start, range.end + 1)
+
+    return (
+      <View className="mb-6">
+        <View className="flex justify-between items-center mb-3">
+          <Text className="block text-base font-medium text-gray-900">学历学位证书（必传）</Text>
+          <Text className="block text-xs text-gray-500">需上传 {visibleSlots.length} 份</Text>
+        </View>
+        <View className="grid grid-cols-2 gap-3">
+          {visibleSlots.map(slot => renderSlot(slot.key, getSlotLabel(slot, education)))}
+        </View>
+      </View>
+    )
+  }
+
   // 加载中
   if (isLoadingData) {
     return (
@@ -382,7 +489,6 @@ const IndexPage = () => {
 
     return (
       <View className="bg-gray-50 p-4 pb-8">
-        {/* 标题 */}
         <View className="mb-4 flex justify-between items-center">
           <View>
             <Text className="block text-xl font-bold text-gray-900 mb-1">我的入职资料</Text>
@@ -394,7 +500,6 @@ const IndexPage = () => {
           </Button>
         </View>
 
-        {/* 提交成功提示 */}
         <Card className="mb-4 border-green-200 bg-green-50">
           <CardContent className="p-4 flex items-center gap-3">
             <CircleCheck size={24} color="#16a34a" />
@@ -423,6 +528,11 @@ const IndexPage = () => {
                 <Text className="block text-sm text-gray-900 font-medium">{phone}</Text>
               </View>
               <View className="flex items-center gap-2">
+                <GraduationCap size={16} color="#6b7280" />
+                <Text className="block text-sm text-gray-500 w-16">学历</Text>
+                <Text className="block text-sm text-gray-900 font-medium">{getEducationLabel(education)}</Text>
+              </View>
+              <View className="flex items-center gap-2">
                 <Calendar size={16} color="#6b7280" />
                 <Text className="block text-sm text-gray-500 w-16">入职日期</Text>
                 <Text className="block text-sm text-gray-900 font-medium">{joinDate}</Text>
@@ -431,10 +541,10 @@ const IndexPage = () => {
           </CardContent>
         </Card>
 
-        {/* 资料列表 - 按类型分组 */}
+        {/* 资料列表 */}
         {FILE_TYPE_GROUPS.map(group => {
           const groupFiles = uploadedFiles.filter(f => group.types.includes(f.fileType))
-          if (groupFiles.length === 0) return null
+          if (groupFiles.length === 0 && group.label !== '学历学位证书') return null
 
           return (
             <Card key={group.label} className="mb-4">
@@ -445,15 +555,16 @@ const IndexPage = () => {
                 </View>
                 <Separator className="mb-3" />
 
-                {/* 图片类型 - 网格展示 */}
-                {group.label !== '体检报告' && (
+                {group.label === '学历学位证书' ? (
+                  // 学历学位证书 - 动态槽位
+                  renderEduCertSection()
+                ) : group.label !== '体检报告' ? (
+                  // 身份证/离职证明 - 网格展示
                   <View className="grid grid-cols-2 gap-3">
                     {group.types.map(type => renderSlot(type, FILE_TYPE_LABELS[type] || type))}
                   </View>
-                )}
-
-                {/* 体检报告 - 列表展示 */}
-                {group.label === '体检报告' && (
+                ) : (
+                  // 体检报告 - 列表展示
                   <View className="flex flex-col gap-2">
                     {groupFiles.map(file => {
                       const isImage = file.fileMimetype?.startsWith('image/')
@@ -494,7 +605,6 @@ const IndexPage = () => {
   // =============== 编辑视图（未提交） ===============
   return (
     <View className="bg-gray-50 p-4 pb-8">
-      {/* 标题 */}
       <View className="mb-4 flex justify-between items-center">
         <View>
           <Text className="block text-xl font-bold text-gray-900 mb-1">新员工资料上传</Text>
@@ -530,6 +640,15 @@ const IndexPage = () => {
             </View>
           </View>
 
+          <View className="mb-4">
+            <Label className="mb-2"><Text className="block text-sm font-medium text-gray-700">学历 *</Text></Label>
+            <Picker mode="selector" range={EDUCATION_OPTIONS.map(o => o.label)} onChange={handleEducationChange} value={EDUCATION_OPTIONS.findIndex(o => o.value === education)}>
+              <View className="bg-gray-50 rounded-lg px-4 py-3 flex justify-between items-center">
+                <Text className={education ? 'text-gray-900' : 'text-gray-400'}>{education ? getEducationLabel(education) : '请选择学历'}</Text>
+              </View>
+            </Picker>
+          </View>
+
           <View>
             <Label className="mb-2"><Text className="block text-sm font-medium text-gray-700">入职日期 *</Text></Label>
             <Picker mode="date" onChange={onDateChange} value={joinDate || ''}>
@@ -555,16 +674,8 @@ const IndexPage = () => {
             </View>
           </View>
 
-          {/* 学位证书 */}
-          <View className="mb-6">
-            <Text className="block text-base font-medium text-gray-900 mb-3">学位证书（必传）</Text>
-            <View className="grid grid-cols-2 gap-3">
-              {renderSlot('degree_cert_1', '学位证书 1')}
-              {renderSlot('degree_cert_2', '学位证书 2')}
-              {renderSlot('degree_cert_3', '学位证书 3')}
-              {renderSlot('degree_cert_4', '学位证书 4')}
-            </View>
-          </View>
+          {/* 学历学位证书 */}
+          {renderEduCertSection()}
 
           {/* 体检报告 */}
           <View className="mb-6">

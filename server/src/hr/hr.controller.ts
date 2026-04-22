@@ -22,6 +22,7 @@ export class HrController {
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
     @Query('fileType') fileType: string,
+    @Query('education') education: string,
   ) {
     if (!file) {
       throw new BadRequestException('请上传文件')
@@ -56,7 +57,7 @@ export class HrController {
       } | null = null
 
       if (fileType && file.mimetype.startsWith('image/')) {
-        verification = await this.hrService.verifyDocumentImage(url, fileType)
+        verification = await this.hrService.verifyDocumentImage(url, fileType, education)
       }
 
       return {
@@ -131,6 +132,7 @@ export class HrController {
   async submitEmployee(@Body() body: {
     name: string
     phone: string
+    education: string
     join_date: string
     files: Array<{
       file_type: string
@@ -142,10 +144,10 @@ export class HrController {
   }) {
     console.log('收到员工资料提交请求:', JSON.stringify(body).substring(0, 500))
 
-    const { name, phone, join_date, files } = body
+    const { name, phone, education, join_date, files } = body
 
     // 验证必填字段
-    if (!name || !phone || !join_date) {
+    if (!name || !phone || !education || !join_date) {
       throw new BadRequestException('请填写完整的基本信息')
     }
 
@@ -158,6 +160,7 @@ export class HrController {
       const employee = await this.hrService.createEmployee({
         name,
         phone,
+        education,
         join_date,
       })
 
@@ -336,12 +339,19 @@ export class HrController {
     const typeMap: Record<string, string> = {
       id_card_front: '身份证正面',
       id_card_back: '身份证背面',
+      diploma: '学历证书',
+      degree: '学位证书',
+      master_diploma: '硕士学历证书',
+      master_degree: '硕士学位证书',
+      doctor_diploma: '博士学历证书',
+      doctor_degree: '博士学位证书',
+      medical_report: '体检报告',
+      resignation_proof: '离职证明',
+      // 兼容旧命名
       degree_cert_1: '学位证书1',
       degree_cert_2: '学位证书2',
       degree_cert_3: '学位证书3',
       degree_cert_4: '学位证书4',
-      medical_report: '体检报告',
-      resignation_proof: '离职证明',
     }
     return typeMap[fileType] || fileType
   }

@@ -17,6 +17,7 @@ export const employees = pgTable(
 		name: varchar("name", { length: 100 }).notNull(),
 		phone: varchar("phone", { length: 20 }).notNull(),
 		status: varchar("status", { length: 20 }).notNull().default("pending"), // pending, submitted, completed
+			education: varchar("education", { length: 20 }),
 			join_date: varchar("join_date", { length: 20 }),
 		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updated_at: timestamp("updated_at", { withTimezone: true }),
