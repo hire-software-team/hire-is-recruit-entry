@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Upload, Settings, Camera, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User, GraduationCap } from 'lucide-react-taro'
+import { Upload, Settings, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User, GraduationCap } from 'lucide-react-taro'
 
 interface FileInfo {
   fileType: string
@@ -391,55 +391,54 @@ const IndexPage = () => {
     const isImage = file?.fileMimetype?.startsWith('image/')
     const verifyResult = file ? verificationResults.get(file.fileKey) : undefined
 
-    if (submittedData && isUploaded && file) {
-      // 已提交状态 - 只读展示
+    if (isUploaded && file) {
+      // 已上传 - 展示预览
       return (
-        <View
-          className="border border-gray-200 rounded-lg overflow-hidden relative"
-          onClick={() => isImage && file.filePath && previewImage(file.filePath)}
-        >
+        <View className="border border-green-200 rounded-lg overflow-hidden relative">
           {isImage && file.filePath ? (
-            <Image src={file.filePath} mode="aspectFill" style={{ width: '100%', height: '200rpx' }} />
+            <View
+              className="relative"
+              onClick={() => previewImage(file.filePath!)}
+            >
+              <Image src={file.filePath} mode="aspectFill" style={{ width: '100%', height: '200rpx' }} />
+              {verifyResult?.verified && (
+                <View className="absolute top-1 left-1">
+                  <CircleCheck size={16} color="#16a34a" />
+                </View>
+              )}
+            </View>
           ) : (
             <View className="p-3 flex flex-col items-center justify-center" style={{ minHeight: '160rpx' }}>
               <FileText size={24} color="#6b7280" />
-              <Text className="block text-xs text-gray-500 mt-1">{file.fileName}</Text>
+              <Text className="block text-xs text-gray-500 mt-1 truncate w-full text-center">{file.fileName}</Text>
             </View>
           )}
-          <View className="p-2 bg-green-50">
-            <Text className="block text-xs text-green-700 text-center">{label}</Text>
+          <View className="p-2 bg-green-50 flex items-center justify-center">
+            <Text className="block text-xs text-green-700">{label}</Text>
           </View>
+          {!submittedData && (
+            <View
+              className="absolute top-1 right-1 bg-black bg-opacity-50 rounded-full p-1"
+              onClick={(e) => { e.stopPropagation && e.stopPropagation(); handleDeleteFile(file.fileKey) }}
+            >
+              <Trash2 size={12} color="#ffffff" />
+            </View>
+          )}
         </View>
       )
     }
 
-    // 编辑状态
+    // 未上传 - 占位
     return (
       <View
         className="border-2 border-dashed rounded-lg p-3 flex flex-col items-center justify-center relative"
-        style={{ borderColor: isUploaded ? '#16a34a' : '#d1d5db', minHeight: '128rpx' }}
+        style={{ borderColor: '#d1d5db', minHeight: '128rpx' }}
         onClick={() => handleChooseFile(fileType)}
       >
-        {isUploaded ? (
-          <View className="text-center">
-            {verifyResult?.verified ? (
-              <>
-                <CircleCheck size={24} color="#16a34a" className="mx-auto mb-1" />
-                <Text className="block text-xs text-green-600">{label}</Text>
-              </>
-            ) : (
-              <>
-                <Camera size={24} color="#16a34a" className="mx-auto mb-1" />
-                <Text className="block text-xs text-green-600">{label}</Text>
-              </>
-            )}
-          </View>
-        ) : (
-          <View className="text-center">
-            <ImagePlus size={24} color="#9ca3af" className="mx-auto mb-1" />
-            <Text className="block text-xs text-gray-400">{label}</Text>
-          </View>
-        )}
+        <View className="text-center">
+          <ImagePlus size={24} color="#9ca3af" className="mx-auto mb-1" />
+          <Text className="block text-xs text-gray-400">{label}</Text>
+        </View>
       </View>
     )
   }
@@ -693,15 +692,30 @@ const IndexPage = () => {
               添加体检报告（PDF或图片）
             </Button>
             {getCount('medical_report') > 0 && (
-              <View className="mt-3">
-                {uploadedFiles.filter(f => f.fileType === 'medical_report').map(file => (
-                  <View key={file.fileKey} className="bg-gray-50 rounded-lg px-3 py-2 mb-2 flex justify-between items-center">
-                    <Text className="block text-sm text-gray-700 flex-1">{file.fileName}</Text>
-                    <View onClick={() => handleDeleteFile(file.fileKey)}>
-                      <Trash2 size={16} color="#dc2626" />
+              <View className="mt-3 flex flex-col gap-2">
+                {uploadedFiles.filter(f => f.fileType === 'medical_report').map(file => {
+                  const isImg = file.fileMimetype?.startsWith('image/')
+                  return (
+                    <View key={file.fileKey} className="bg-gray-50 rounded-lg px-3 py-2 flex items-center gap-3">
+                      {isImg && file.filePath ? (
+                        <View
+                          className="border border-gray-200 rounded overflow-hidden flex-shrink-0"
+                          onClick={() => previewImage(file.filePath!)}
+                        >
+                          <Image src={file.filePath} mode="aspectFill" style={{ width: '96rpx', height: '96rpx' }} />
+                        </View>
+                      ) : (
+                        <View className="flex-shrink-0 p-2 bg-white rounded border border-gray-200">
+                          <FileText size={20} color="#dc2626" />
+                        </View>
+                      )}
+                      <Text className="block text-sm text-gray-700 flex-1 truncate">{file.fileName}</Text>
+                      <View onClick={() => handleDeleteFile(file.fileKey)}>
+                        <Trash2 size={16} color="#dc2626" />
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  )
+                })}
               </View>
             )}
           </View>
