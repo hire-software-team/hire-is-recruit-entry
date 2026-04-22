@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { getSupabaseClient } from '../storage/database/supabase-client'
 import { Employee, EmployeeFile } from './hr.types'
 import { LLMClient, Config } from 'coze-coding-dev-sdk'
+import { StorageService } from '../storage/storage.service'
 
 interface CreateEmployeeDto {
   name: string
@@ -104,7 +105,7 @@ export class HrService {
   private supabase = getSupabaseClient()
   private llmClient: LLMClient
 
-  constructor() {
+  constructor(private readonly storageService: StorageService) {
     const config = new Config()
     this.llmClient = new LLMClient(config)
   }
@@ -385,5 +386,68 @@ export class HrService {
       console.error('证件校验调用大模型失败:', error)
       return null
     }
+  }
+
+  /**
+   * 清理孤儿文件：删除 Storage 中未关联数据库记录的文件
+   * 仅清理超过 24 小时的文件（避免删除正在上传中的文件）
+   */
+  async cleanupOrphanFiles(): Promise<{ scanned: number; deleted: number; kept: number }> {
+    console.log('开始清理孤儿文件...')
+
+    // 1. 获取 Storage 中所有文件
+    const storageKeys = await this.storageService.listFiles('hr-files/')
+    console.log(`Storage 中共 ${storageKeys.length} 个文件`)
+
+    // 2. 获取数据库中所有已关联的 file_key
+    const { data: dbFiles, error } = await this.supabase
+      .from('employee_files')
+      .select('file_key')
+
+    if (error) {
+      console.error('查询数据库文件记录失败:', error)
+      throw new Error(`查询数据库文件记录失败: ${error.message}`)
+    }
+
+    const dbKeys = new Set((dbFiles || []).map((f: any) => f.file_key))
+    console.log(`数据库中 ${dbKeys.size} 个已关联文件`)
+
+    // 3. 找出孤儿文件（Storage 中存在但数据库中无记录）
+    const now = Date.now()
+    const twentyFourHours = 24 * 60 * 60 * 1000
+    let deleted = 0
+    let kept = 0
+
+    for (const key of storageKeys) {
+      if (dbKeys.has(key)) {
+        // 已关联，保留
+        kept++
+        continue
+      }
+
+      // 未关联，检查是否超过 24 小时
+      // 文件名格式：hr-files/{timestamp}-{random}.{ext}
+      const fileName = key.split('/').pop() || ''
+      const timestampMatch = fileName.match(/^(\d+)-/)
+      if (timestampMatch) {
+        const fileTime = parseInt(timestampMatch[1], 10)
+        if (now - fileTime < twentyFourHours) {
+          // 不足 24 小时，保留（可能正在上传中）
+          console.log(`跳过近期文件: ${key} (${Math.round((now - fileTime) / 3600000)} 小时前)`)
+          kept++
+          continue
+        }
+      }
+
+      // 超过 24 小时的孤儿文件，删除
+      const success = await this.storageService.deleteFile(key)
+      if (success) {
+        deleted++
+        console.log(`已清理孤儿文件: ${key}`)
+      }
+    }
+
+    console.log(`孤儿文件清理完成: 扫描 ${storageKeys.length}, 删除 ${deleted}, 保留 ${kept}`)
+    return { scanned: storageKeys.length, deleted, kept }
   }
 }

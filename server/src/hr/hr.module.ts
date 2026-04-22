@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { MulterModule } from '@nestjs/platform-express'
 import { HrController } from './hr.controller'
 import { HrService } from './hr.service'
+import { HrCleanupService } from './hr-cleanup.service'
 import { StorageService } from '../storage/storage.service'
 
 @Module({
@@ -14,7 +15,7 @@ import { StorageService } from '../storage/storage.service'
     }),
   ],
   controllers: [HrController],
-  providers: [HrService, StorageService],
+  providers: [HrService, HrCleanupService, StorageService],
   exports: [HrService],
 })
 export class HrModule {}

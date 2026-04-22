@@ -2,6 +2,7 @@ import { Controller, Post, Get, Param, Query, Body, UseInterceptors, UploadedFil
 import { FileInterceptor } from '@nestjs/platform-express'
 import { Response } from 'express'
 import { HrService } from './hr.service'
+import { HrCleanupService } from './hr-cleanup.service'
 import { StorageService } from '../storage/storage.service'
 import * as archiver from 'archiver'
 
@@ -10,6 +11,7 @@ export class HrController {
   constructor(
     private readonly hrService: HrService,
     private readonly storageService: StorageService,
+    private readonly cleanupService: HrCleanupService,
   ) {}
 
   /**
@@ -356,5 +358,25 @@ export class HrController {
       degree_cert_4: '学位证书4',
     }
     return typeMap[fileType] || fileType
+  }
+
+  /**
+   * 手动触发孤儿文件清理（管理端）
+   */
+  @Post('cleanup/orphan-files')
+  @HttpCode(200)
+  async cleanupOrphanFiles() {
+    console.log('收到手动清理孤儿文件请求')
+    try {
+      const result = await this.cleanupService.manualCleanup()
+      return {
+        code: 200,
+        msg: '清理完成',
+        data: result,
+      }
+    } catch (error: any) {
+      console.error('清理孤儿文件失败:', error)
+      throw new BadRequestException(error.message || '清理失败')
+    }
   }
 }

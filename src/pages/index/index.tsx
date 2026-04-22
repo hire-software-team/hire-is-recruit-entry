@@ -122,6 +122,36 @@ const IndexPage = () => {
   } | null>(null)
   const [isLoadingData, setIsLoadingData] = useState(true)
 
+  // 草稿缓存 Key
+  const DRAFT_KEY = 'hrDraft'
+
+  // 保存草稿到 localStorage
+  const saveDraft = (draftName: string, draftPhone: string, draftEducation: string, draftJoinDate: string, draftFiles: FileInfo[]) => {
+    try {
+      Taro.setStorageSync(DRAFT_KEY, JSON.stringify({
+        name: draftName,
+        phone: draftPhone,
+        education: draftEducation,
+        joinDate: draftJoinDate,
+        files: draftFiles,
+        updatedAt: Date.now(),
+      }))
+      console.log('草稿已保存, 文件数:', draftFiles.length)
+    } catch (e) {
+      console.error('保存草稿失败:', e)
+    }
+  }
+
+  // 清除草稿
+  const clearDraft = () => {
+    try {
+      Taro.removeStorageSync(DRAFT_KEY)
+      console.log('草稿已清除')
+    } catch (e) {
+      console.error('清除草稿失败:', e)
+    }
+  }
+
   // 页面加载时检查是否有已提交的资料
   useEffect(() => {
     const savedPhone = Taro.getStorageSync('employeePhone')
@@ -129,9 +159,31 @@ const IndexPage = () => {
     if (savedPhone) {
       loadSubmittedData(savedPhone)
     } else {
+      // 没有已提交的资料，尝试恢复草稿
+      loadDraft()
       setIsLoadingData(false)
     }
   }, [])
+
+  // 从 localStorage 恢复草稿
+  const loadDraft = () => {
+    try {
+      const draftStr = Taro.getStorageSync(DRAFT_KEY)
+      if (!draftStr) return
+      const draft = JSON.parse(draftStr)
+      if (draft && draft.files && draft.files.length > 0) {
+        console.log('恢复草稿, 文件数:', draft.files.length, '保存时间:', new Date(draft.updatedAt).toLocaleString())
+        setName(draft.name || '')
+        setPhone(draft.phone || '')
+        setEducation(draft.education || '')
+        setJoinDate(draft.joinDate || '')
+        setUploadedFiles(draft.files)
+        Taro.showToast({ title: '已恢复上次编辑进度', icon: 'none', duration: 2000 })
+      }
+    } catch (e) {
+      console.error('恢复草稿失败:', e)
+    }
+  }
 
   // 通过手机号加载已提交的数据
   const loadSubmittedData = async (phoneNumber: string) => {
@@ -173,7 +225,8 @@ const IndexPage = () => {
     setEducation(newEdu)
     // 清空学历学位证书相关文件
     const eduKeys = EDU_CERT_SLOTS.map(s => s.key)
-    setUploadedFiles(prev => prev.filter(f => !eduKeys.includes(f.fileType)))
+    const remainingFiles = uploadedFiles.filter(f => !eduKeys.includes(f.fileType))
+    setUploadedFiles(remainingFiles)
     setVerificationResults(prev => {
       const next = new Map(prev)
       for (const key of eduKeys) {
@@ -185,6 +238,7 @@ const IndexPage = () => {
       }
       return next
     })
+    saveDraft(name, phone, newEdu, joinDate, remainingFiles)
   }
 
   // 选择并上传文件
@@ -261,14 +315,16 @@ const IndexPage = () => {
                 confirmText: '我知道了',
               })
             } else {
-              setUploadedFiles(prev => [...prev, {
+              const newFiles = [...uploadedFiles, {
                 fileType,
                 fileName: data.data.fileName,
                 filePath: data.data.url,
                 fileSize: data.data.fileSize,
                 fileKey,
                 fileMimetype: data.data.fileMimetype,
-              }])
+              }]
+              setUploadedFiles(newFiles)
+              saveDraft(name, phone, education, joinDate, newFiles)
 
               if (verification) {
                 setVerificationResults(prev => new Map(prev).set(fileKey, verification))
@@ -303,12 +359,14 @@ const IndexPage = () => {
 
   const handleDeleteFile = (fileKey: string) => {
     if (submittedData) return
-    setUploadedFiles(prev => prev.filter(f => f.fileKey !== fileKey))
+    const remainingFiles = uploadedFiles.filter(f => f.fileKey !== fileKey)
+    setUploadedFiles(remainingFiles)
     setVerificationResults(prev => {
       const next = new Map(prev)
       next.delete(fileKey)
       return next
     })
+    saveDraft(name, phone, education, joinDate, remainingFiles)
   }
 
   const handleSubmit = async () => {
@@ -361,6 +419,7 @@ const IndexPage = () => {
       console.log('提交响应:', res)
       if (res.data.code === 200) {
         Taro.setStorageSync('employeePhone', phone)
+        clearDraft()
         setSubmittedData({
           employee: { name, phone, education, join_date: joinDate, status: 'submitted' },
           files: uploadedFiles.map(f => ({
