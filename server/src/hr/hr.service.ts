@@ -26,11 +26,11 @@ interface VerifyResult {
 const DOCUMENT_TYPE_PROMPTS: Record<string, { label: string; description: string }> = {
   id_card_front: {
     label: '身份证正面（人像面）',
-    description: '中国居民身份证人像面，包含姓名、性别、民族、出生日期、住址、公民身份号码等信息，右上角有国徽',
+    description: '中国居民身份证人像面，左侧有持证人照片，右侧包含姓名、性别、民族、出生日期、住址、公民身份号码等信息，正面没有国徽',
   },
   id_card_back: {
     label: '身份证背面（国徽面）',
-    description: '中国居民身份证国徽面，包含签发机关和有效期限，上方有国徽图案',
+    description: '中国居民身份证国徽面，上方有国徽图案，下方包含签发机关和有效期限',
   },
   resignation_proof: {
     label: '离职证明',
