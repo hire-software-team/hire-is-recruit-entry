@@ -124,6 +124,7 @@ const IndexPage = () => {
 
   // 草稿缓存 Key
   const DRAFT_KEY = 'hrDraft'
+  const SUBMITTED_KEY = 'hrSubmittedData'
 
   // 保存草稿到 localStorage
   const saveDraft = (draftName: string, draftPhone: string, draftEducation: string, draftJoinDate: string, draftFiles: FileInfo[]) => {
@@ -152,22 +153,57 @@ const IndexPage = () => {
     }
   }
 
-  // 页面加载时检查是否有已提交的资料
-  useEffect(() => {
-    const savedPhone = Taro.getStorageSync('employeePhone')
-    console.log('检查已保存的手机号:', savedPhone)
-    if (savedPhone) {
-      loadSubmittedData(savedPhone)
-    } else {
-      // 没有已提交的资料，尝试恢复草稿
-      loadDraft()
-      setIsLoadingData(false)
+  // 保存已提交数据到 localStorage
+  const saveSubmittedData = (emp: any, files: FileInfo[]) => {
+    try {
+      Taro.setStorageSync(SUBMITTED_KEY, JSON.stringify({
+        employee: emp,
+        files,
+        submittedAt: Date.now(),
+      }))
+    } catch (e) {
+      console.error('保存已提交数据失败:', e)
     }
+  }
+
+  // 页面加载时恢复数据
+  useEffect(() => {
+    // 1. 优先检查已提交的资料
+    const submittedStr = Taro.getStorageSync(SUBMITTED_KEY)
+    if (submittedStr) {
+      try {
+        const submitted = JSON.parse(submittedStr)
+        if (submitted && submitted.employee) {
+          const emp = submitted.employee
+          setSubmittedData(submitted)
+          setName(emp.name || '')
+          setPhone(emp.phone || '')
+          setEducation(emp.education || '')
+          setJoinDate(emp.join_date || emp.joinDate || '')
+          const files: FileInfo[] = (submitted.files || []).map(f => ({
+            fileType: f.fileType || f.file_type,
+            fileName: f.fileName || f.file_name,
+            filePath: f.filePath || f.url,
+            fileSize: f.fileSize || f.file_size,
+            fileKey: f.fileKey || f.file_key,
+            fileMimetype: f.fileMimetype || f.file_type_ext || '',
+          }))
+          setUploadedFiles(files)
+          setIsLoadingData(false)
+          return
+        }
+      } catch (e) {
+        console.error('恢复已提交数据失败:', e)
+      }
+    }
+
+    // 2. 没有已提交资料，尝试恢复草稿
+    loadDraft()
+    setIsLoadingData(false)
   }, [])
 
   // 从 localStorage 恢复草稿
-  const loadDraft = () => {
-    try {
+  const loadDraft = () => {    try {
       const draftStr = Taro.getStorageSync(DRAFT_KEY)
       if (!draftStr) return
       const draft = JSON.parse(draftStr)
@@ -182,40 +218,6 @@ const IndexPage = () => {
       }
     } catch (e) {
       console.error('恢复草稿失败:', e)
-    }
-  }
-
-  // 通过手机号加载已提交的数据
-  const loadSubmittedData = async (phoneNumber: string) => {
-    try {
-      setIsLoadingData(true)
-      const res = await Network.request({
-        url: `/api/hr/employees/lookup?phone=${phoneNumber}`,
-        method: 'GET',
-      })
-      console.log('查找员工响应:', res.data)
-
-      if (res.data.code === 200 && res.data.data) {
-        const emp = res.data.data.employee
-        setSubmittedData(res.data.data)
-        setName(emp.name || '')
-        setPhone(emp.phone || '')
-        setEducation(emp.education || '')
-        setJoinDate(emp.join_date || '')
-        const files: FileInfo[] = (res.data.data.files || []).map(f => ({
-          fileType: f.file_type,
-          fileName: f.file_name,
-          filePath: f.url,
-          fileSize: f.file_size,
-          fileKey: f.file_key,
-          fileMimetype: f.file_type_ext,
-        }))
-        setUploadedFiles(files)
-      }
-    } catch (error: any) {
-      console.error('加载已提交数据失败:', error)
-    } finally {
-      setIsLoadingData(false)
     }
   }
 
@@ -418,17 +420,19 @@ const IndexPage = () => {
       })
       console.log('提交响应:', res)
       if (res.data.code === 200) {
-        Taro.setStorageSync('employeePhone', phone)
         clearDraft()
+        const submittedEmployee = { name, phone, education, join_date: joinDate, status: 'submitted' }
+        const submittedFiles = uploadedFiles.map(f => ({
+          file_type: f.fileType,
+          file_name: f.fileName,
+          url: f.filePath,
+          file_size: f.fileSize,
+          file_type_ext: f.fileMimetype,
+        }))
+        saveSubmittedData(submittedEmployee, uploadedFiles)
         setSubmittedData({
-          employee: { name, phone, education, join_date: joinDate, status: 'submitted' },
-          files: uploadedFiles.map(f => ({
-            file_type: f.fileType,
-            file_name: f.fileName,
-            url: f.filePath,
-            file_size: f.fileSize,
-            file_type_ext: f.fileMimetype,
-          })),
+          employee: submittedEmployee,
+          files: submittedFiles,
         })
         Taro.showToast({ title: '提交成功', icon: 'success' })
       } else {

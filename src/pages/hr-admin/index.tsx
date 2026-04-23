@@ -28,6 +28,7 @@ interface EmployeeDetail {
     file_size: number
     file_type_ext: string
     url: string
+    signed_url: string
   }>
 }
 
@@ -205,9 +206,13 @@ const HrAdminPage = () => {
             } else {
               // H5 环境：通过 fetch 获取 blob 再下载
               Taro.showLoading({ title: '打包下载中...' })
-              const downloadUrl = `/api/hr/employees/${employeeId}/download?token=${encodeURIComponent(token)}`
+              const downloadUrl = `/api/hr/employees/${employeeId}/download`
 
-              const res = await fetch(downloadUrl)
+              const res = await fetch(downloadUrl, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              })
               Taro.hideLoading()
 
               if (res.ok) {
@@ -271,7 +276,7 @@ const HrAdminPage = () => {
   if (detail) {
     const allImageUrls = detail.files
       .filter(f => f.file_type_ext?.startsWith('image/'))
-      .map(f => f.url)
+      .map(f => f.signed_url || f.url)
 
     return (
       <View className="bg-gray-50 min-h-screen">
@@ -352,10 +357,10 @@ const HrAdminPage = () => {
                           <View
                             key={type}
                             className="border border-gray-200 rounded-lg overflow-hidden"
-                            onClick={() => isImage && previewImage(file.url, allImageUrls)}
+                            onClick={() => isImage && previewImage(file.signed_url || file.url, allImageUrls)}
                           >
                             {isImage ? (
-                              <Image src={file.url} mode="aspectFill" style={{ width: '100%', height: '200rpx' }} />
+                              <Image src={file.signed_url || file.url} mode="aspectFill" style={{ width: '100%', height: '200rpx' }} />
                             ) : (
                               <View className="p-3 flex flex-col items-center justify-center" style={{ minHeight: '160rpx' }}>
                                 <FileText size={24} color="#6b7280" />
@@ -381,9 +386,9 @@ const HrAdminPage = () => {
                             {isImage ? (
                               <View
                                 className="border border-gray-200 rounded overflow-hidden flex-shrink-0"
-                                onClick={() => previewImage(file.url, allImageUrls)}
+                                onClick={() => previewImage(file.signed_url || file.url, allImageUrls)}
                               >
-                                <Image src={file.url} mode="aspectFill" style={{ width: '120rpx', height: '120rpx' }} />
+                                <Image src={file.signed_url || file.url} mode="aspectFill" style={{ width: '120rpx', height: '120rpx' }} />
                               </View>
                             ) : (
                               <View className="flex-shrink-0 p-2 bg-white rounded border border-gray-200">

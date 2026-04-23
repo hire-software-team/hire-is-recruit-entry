@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common'
+import { JwtService } from '@nestjs/jwt'
 import { getSupabaseClient } from '../storage/database/supabase-client'
 import { Employee, EmployeeFile } from './hr.types'
 import { LLMClient, Config } from 'coze-coding-dev-sdk'
 import { StorageService } from '../storage/storage.service'
+import { maskPhone, maskSensitive } from './hr.utils'
+import * as bcrypt from 'bcryptjs'
+import { jwtConstants } from './hr-auth.constants'
 
 interface CreateEmployeeDto {
   name: string
@@ -48,13 +52,6 @@ const DOCUMENT_TYPE_PROMPTS: Record<string, { label: string; description: string
 
 // 学历学位证书的 Prompt 根据 education 动态生成
 function getEduCertPrompt(fileType: string, education: string): { label: string; description: string } | null {
-  const eduLabelMap: Record<string, string> = {
-    below_bachelor: '大专/职高/高中',
-    bachelor: '本科',
-    master: '硕士',
-    doctor: '博士',
-  }
-
   switch (fileType) {
     case 'diploma':
       if (education === 'below_bachelor') {
@@ -105,7 +102,10 @@ export class HrService {
   private supabase = getSupabaseClient()
   private llmClient: LLMClient
 
-  constructor(private readonly storageService: StorageService) {
+  constructor(
+    private readonly storageService: StorageService,
+    private readonly jwtService: JwtService,
+  ) {
     const config = new Config()
     this.llmClient = new LLMClient(config)
   }
@@ -166,7 +166,7 @@ export class HrService {
   }
 
   /**
-   * 通过手机号查找员工
+   * 通过手机号查找员工（仅内部使用，HR管理端专用）
    */
   async lookupByPhone(phone: string): Promise<{ employee: Employee; files: EmployeeFile[] } | null> {
     const { data: employees, error: empError } = await this.supabase
@@ -200,13 +200,13 @@ export class HrService {
   }
 
   /**
-   * 获取员工列表
+   * 获取员工列表（脱敏手机号）
    */
   async getEmployeeList(filters?: {
     name?: string
     phone?: string
     status?: string
-  }): Promise<{ employees: Employee[]; total: number }> {
+  }): Promise<{ employees: any[]; total: number }> {
     let query = this.supabase
       .from('employees')
       .select('*', { count: 'exact' })
@@ -230,16 +230,22 @@ export class HrService {
       throw new Error(`获取员工列表失败: ${error.message}`)
     }
 
+    // 脱敏手机号
+    const employees = ((data as Employee[]) || []).map(emp => ({
+      ...emp,
+      phone: maskPhone(emp.phone),
+    }))
+
     return {
-      employees: (data as Employee[]) || [],
+      employees,
       total: count || 0,
     }
   }
 
   /**
-   * 获取员工详情
+   * 获取员工详情（脱敏手机号）
    */
-  async getEmployeeDetail(id: number): Promise<{ employee: Employee; files: EmployeeFile[] }> {
+  async getEmployeeDetail(id: number): Promise<{ employee: any; files: EmployeeFile[] }> {
     const { data: employee, error: empError } = await this.supabase
       .from('employees')
       .select('*')
@@ -262,37 +268,70 @@ export class HrService {
       throw new Error(`获取员工文件失败: ${fileError.message}`)
     }
 
+    // 脱敏手机号
+    const maskedEmployee = {
+      ...(employee as Employee),
+      phone: maskPhone((employee as Employee).phone),
+    }
+
     return {
-      employee: employee as Employee,
+      employee: maskedEmployee,
       files: (files as EmployeeFile[]) || [],
     }
   }
 
   /**
-   * 验证管理员
+   * 验证管理员（bcrypt 比对）
    */
-  async validateAdmin(username: string, password: string): Promise<boolean> {
+  async validateAdmin(username: string, password: string): Promise<{ id: number; username: string } | null> {
     const { data, error } = await this.supabase
       .from('admin_users')
-      .select('*')
+      .select('id, username, password')
       .eq('username', username)
       .maybeSingle()
 
     if (error) {
       console.error('验证管理员失败:', error)
-      return false
+      return null
     }
 
     if (!data) {
-      return false
+      return null
     }
 
-    return data.password === password
+    // 兼容：如果密码不是 bcrypt 格式（旧明文密码），先比对再自动迁移
+    const isBcryptHash = data.password.startsWith('$2a$') || data.password.startsWith('$2b$')
+
+    if (isBcryptHash) {
+      const isValid = await bcrypt.compare(password, data.password)
+      return isValid ? { id: data.id, username: data.username } : null
+    } else {
+      // 旧明文密码比对
+      if (data.password !== password) return null
+
+      // 自动迁移为 bcrypt 哈希
+      const hashedPassword = await bcrypt.hash(password, 10)
+      await this.supabase
+        .from('admin_users')
+        .update({ password: hashedPassword })
+        .eq('id', data.id)
+      console.log(`管理员 ${maskSensitive(username)} 密码已迁移为bcrypt哈希`)
+
+      return { id: data.id, username: data.username }
+    }
+  }
+
+  /**
+   * 签发 JWT Token
+   */
+  async generateToken(admin: { id: number; username: string }): Promise<string> {
+    const payload = { sub: admin.id, username: admin.username, role: 'admin' }
+    return this.jwtService.sign(payload)
   }
 
   /**
    * 校验证件图片是否合规
-   * @param imageUrl 图片公开访问 URL
+   * @param imageUrl 图片访问 URL（签名 URL）
    * @param fileType 文件类型标识
    * @param education 学历（用于动态调整学历学位证书的校验 Prompt）
    * @returns 校验结果
@@ -338,7 +377,7 @@ export class HrService {
 6. reason：不通过时给出具体原因，必须指出具体哪项不通过及详细说明。例如"证件不完整，右上角被裁切"或"证件上的姓名和身份证号模糊无法识别，请重新拍摄"。通过时为空字符串。`
 
     try {
-      console.log('开始校验证件图片:', { fileType, education, imageUrl: imageUrl.substring(0, 100) })
+      console.log('开始校验证件图片:', { fileType, education })
 
       const messages = [
         { role: 'system' as const, content: systemPrompt },
@@ -420,26 +459,20 @@ export class HrService {
 
     for (const key of storageKeys) {
       if (dbKeys.has(key)) {
-        // 已关联，保留
         kept++
         continue
       }
 
-      // 未关联，检查是否超过 24 小时
-      // 文件名格式：hr-files/{timestamp}-{random}.{ext}
       const fileName = key.split('/').pop() || ''
       const timestampMatch = fileName.match(/^(\d+)-/)
       if (timestampMatch) {
         const fileTime = parseInt(timestampMatch[1], 10)
         if (now - fileTime < twentyFourHours) {
-          // 不足 24 小时，保留（可能正在上传中）
-          console.log(`跳过近期文件: ${key} (${Math.round((now - fileTime) / 3600000)} 小时前)`)
           kept++
           continue
         }
       }
 
-      // 超过 24 小时的孤儿文件，删除
       const success = await this.storageService.deleteFile(key)
       if (success) {
         deleted++

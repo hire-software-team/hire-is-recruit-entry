@@ -35,13 +35,32 @@ export class StorageService {
   }
 
   /**
-   * 获取文件公开访问 URL
+   * 获取文件公开访问 URL（仅用于内部兼容，优先使用 getSignedUrl）
    */
   getPublicUrl(key: string): string {
     const { data } = this.supabase.storage
       .from('hr-files')
       .getPublicUrl(key)
     return data.publicUrl
+  }
+
+  /**
+   * 获取文件签名 URL（限时访问，推荐使用）
+   * @param key 文件存储 key
+   * @param expiresIn 有效期（秒），默认 30 分钟
+   */
+  async getSignedUrl(key: string, expiresIn: number = 1800): Promise<string> {
+    const { data, error } = await this.supabase.storage
+      .from('hr-files')
+      .createSignedUrl(key, expiresIn)
+
+    if (error) {
+      console.error('生成签名URL失败:', key, error)
+      // 降级返回公开 URL
+      return this.getPublicUrl(key)
+    }
+
+    return data.signedUrl
   }
 
   /**
@@ -73,7 +92,6 @@ export class StorageService {
     let offset = 0
     const limit = 100
 
-    // 分页获取所有文件
     while (true) {
       const { data, error } = await this.supabase.storage
         .from('hr-files')
@@ -91,7 +109,6 @@ export class StorageService {
       if (!data || data.length === 0) break
 
       for (const item of data) {
-        // 只收集文件，跳过文件夹
         if (!item.id) continue
         keys.push(`${prefix}${item.name}`)
       }
