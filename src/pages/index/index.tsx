@@ -440,12 +440,12 @@ const IndexPage = () => {
         data: {
           name, phone, education, join_date: joinDate,
           files: uploadedFiles.map(f => ({
-            file_type: f.fileType,
-            file_key: f.fileKey,
-            file_name: f.fileName,
-            file_size: f.fileSize,
-            file_mimetype: f.fileMimetype,
-            verification_override: f.verificationOverride || false,
+            fileType: f.fileType,
+            fileKey: f.fileKey,
+            fileName: f.fileName,
+            fileSize: f.fileSize,
+            fileMimetype: f.fileMimetype,
+            verificationOverride: f.verificationOverride || false,
           })),
         },
       })
