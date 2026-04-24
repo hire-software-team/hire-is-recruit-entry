@@ -347,7 +347,7 @@ const IndexPage = () => {
           console.error('上传失败:', error)
           Taro.hideToast()
           setVerifyingType(null)
-          Taro.showToast({ title: error.message || '上传失败', icon: 'none' })
+          Taro.showToast({ title: error?.data?.message || error?.message || '上传失败', icon: 'none' })
         }
       }
       setIsUploading(false)
@@ -471,7 +471,9 @@ const IndexPage = () => {
       }
     } catch (error: any) {
       console.error('提交失败:', error)
-      Taro.showToast({ title: error.message || '提交失败', icon: 'none' })
+      // 从 Taro 错误对象中提取后端返回的业务错误消息
+      const errMsg = error?.data?.message || error?.message || error?.errMsg || '提交失败'
+      Taro.showToast({ title: errMsg, icon: 'none', duration: 3000 })
     } finally {
       setIsUploading(false)
     }
