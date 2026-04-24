@@ -12,6 +12,31 @@ import * as archiver from 'archiver'
 const uploadLimiter = new RateLimiter()
 const submitLimiter = new RateLimiter()
 
+// 根据文件扩展名推断 MIME 类型
+function guessMimeType(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase() || ''
+  const mimeMap: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+    webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml',
+    pdf: 'application/pdf', doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  }
+  return mimeMap[ext] || 'application/octet-stream'
+}
+
+// MIME 类型转扩展名（兼容旧的扩展名格式）
+function mimeTypeToExt(mimeType: string): string {
+  if (!mimeType) return ''
+  // 如果本身就是扩展名（旧格式），直接返回
+  if (!mimeType.includes('/')) return mimeType
+  const extMap: Record<string, string> = {
+    'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif',
+    'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg',
+    'application/pdf': 'pdf',
+  }
+  return extMap[mimeType] || mimeType.split('/').pop() || ''
+}
+
 @Controller('hr')
 export class HrController {
   constructor(
@@ -90,9 +115,8 @@ export class HrController {
       verification = await this.hrService.verifyDocumentImage(signedUrl, fileType, education)
 
       if (verification && !verification.verified) {
-        // 校验未通过，删除已上传的文件
-        await this.storageService.deleteFile(key)
-        console.log('校验未通过，已删除文件:', key)
+        // 校验未通过，保留文件（用户可选择"仍然提交"申诉，文件仍需可用）
+        console.log('校验未通过，保留文件供申诉:', key)
 
         return {
           code: 200,
@@ -139,6 +163,7 @@ export class HrController {
         fileKey: string
         fileName: string
         fileSize: number
+        fileMimetype?: string
         verificationOverride?: boolean
       }>
     },
@@ -181,13 +206,13 @@ export class HrController {
     // 创建文件记录
     const fileRecords: any[] = []
     for (const file of body.files) {
-      const ext = file.fileName.split('.').pop() || ''
+      const mimeType = file.fileMimetype || guessMimeType(file.fileName)
       const fileRecord = await this.hrService.createEmployeeFile(employee.id, {
         file_type: file.fileType,
         file_key: file.fileKey,
         file_name: file.fileName,
         file_size: file.fileSize,
-        file_type_ext: ext,
+        file_type_ext: mimeType,
         verification_override: file.verificationOverride || false,
       })
       fileRecords.push(fileRecord)
@@ -286,7 +311,7 @@ export class HrController {
       try {
         const fileBuffer = await this.storageService.downloadFile(file.file_key)
         const typeName = this.getFileTypeName(file.file_type)
-        const ext = file.file_type_ext || file.file_name.split('.').pop() || 'bin'
+        const ext = file.file_name.split('.').pop() || mimeTypeToExt(file.file_type_ext) || 'bin'
         const fileName = `${typeName}_${file.id}.${ext}`
 
         archive.append(fileBuffer, { name: fileName })

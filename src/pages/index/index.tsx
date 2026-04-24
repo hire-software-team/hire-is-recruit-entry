@@ -108,6 +108,14 @@ const FILE_TYPE_GROUPS = [
   { label: '银行卡', types: ['bank_card_front', 'bank_card_back'] },
 ]
 
+// 判断文件类型是否为图片（兼容 MIME 类型和扩展名两种格式）
+const isImageByMimetype = (mimetype?: string): boolean => {
+  if (!mimetype) return false
+  if (mimetype.startsWith('image/')) return true
+  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg']
+  return imageExts.includes(mimetype.toLowerCase())
+}
+
 const IndexPage = () => {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -504,7 +512,7 @@ const IndexPage = () => {
   const renderSlot = (fileType: string, label: string) => {
     const isUploaded = getCount(fileType) > 0
     const file = uploadedFiles.find(f => f.fileType === fileType)
-    const isImage = file?.fileMimetype?.startsWith('image/')
+    const isImage = isImageByMimetype(file?.fileMimetype)
     const verifyResult = file ? verificationResults.get(file.fileKey) : undefined
     const isVerifying = verifyingType === fileType
 
@@ -707,7 +715,7 @@ const IndexPage = () => {
                   // 体检报告 - 列表展示
                   <View className="flex flex-col gap-2">
                     {groupFiles.map(file => {
-                      const isImage = file.fileMimetype?.startsWith('image/')
+                      const isImage = isImageByMimetype(file.fileMimetype)
                       return (
                         <View key={file.fileKey} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                           {isImage ? (

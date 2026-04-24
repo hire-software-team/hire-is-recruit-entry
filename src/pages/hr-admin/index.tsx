@@ -68,6 +68,14 @@ const FILE_TYPE_GROUPS = [
   { label: '银行卡', types: ['bank_card_front', 'bank_card_back'] },
 ]
 
+// 判断文件类型是否为图片（兼容 MIME 类型和扩展名两种格式）
+const isImageFile = (fileTypeExt?: string): boolean => {
+  if (!fileTypeExt) return false
+  if (fileTypeExt.startsWith('image/')) return true
+  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg']
+  return imageExts.includes(fileTypeExt.toLowerCase())
+}
+
 const HrAdminPage = () => {
   const [token, setToken] = useState<string>('')
   const [username, setUsername] = useState('')
@@ -351,7 +359,7 @@ const HrAdminPage = () => {
       {/* =============== 详情视图 =============== */}
       {detail && (() => {
         const allImageUrls = detail.files
-          .filter(f => f.file_type_ext?.startsWith('image/'))
+          .filter(f => isImageFile(f.file_type_ext))
           .map(f => f.signed_url || f.url)
 
         return (
@@ -428,7 +436,7 @@ const HrAdminPage = () => {
                                 </View>
                               )
                             }
-                            const isImage = file.file_type_ext?.startsWith('image/')
+                            const isImage = isImageFile(file.file_type_ext)
                             return (
                               <View
                                 key={type}
@@ -463,7 +471,7 @@ const HrAdminPage = () => {
                       {group.label === '体检报告' && (
                         <View className="flex flex-col gap-2">
                           {groupFiles.map(file => {
-                            const isImage = file.file_type_ext?.startsWith('image/')
+                            const isImage = isImageFile(file.file_type_ext)
                             return (
                               <View key={file.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                                 {isImage ? (
