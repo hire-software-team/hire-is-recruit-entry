@@ -1,4 +1,4 @@
-import { pgTable, serial, timestamp, varchar, integer, text } from "drizzle-orm/pg-core"
+import { pgTable, serial, timestamp, varchar, integer, text, boolean } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 import { index } from "drizzle-orm/pg-core"
 
@@ -40,6 +40,7 @@ export const employeeFiles = pgTable(
 		file_name: varchar("file_name", { length: 255 }).notNull(), // 原始文件名
 		file_size: integer("file_size").notNull(), // 文件大小（字节）
 		file_type_ext: varchar("file_type_ext", { length: 20 }).notNull(), // 文件扩展名 (jpg, png, pdf)
+		verification_override: boolean("verification_override").default(false), // 是否申诉覆盖AI校验
 		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [

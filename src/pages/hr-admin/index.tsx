@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye, GraduationCap } from 'lucide-react-taro'
+import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye, GraduationCap, Settings, Trash2, TriangleAlert } from 'lucide-react-taro'
 
 interface EmployeeDetail {
   employee: {
@@ -27,6 +27,7 @@ interface EmployeeDetail {
     file_name: string
     file_size: number
     file_type_ext: string
+    verification_override: boolean
     url: string
     signed_url: string
   }>
@@ -77,6 +78,16 @@ const HrAdminPage = () => {
   const [detail, setDetail] = useState<EmployeeDetail | null>(null)
   const [searchName, setSearchName] = useState('')
 
+  // 修改密码相关状态
+  const [showChangePwd, setShowChangePwd] = useState(false)
+  const [currentPwd, setCurrentPwd] = useState('')
+  const [newPwd, setNewPwd] = useState('')
+  const [confirmPwd, setConfirmPwd] = useState('')
+
+  // 删除确认相关状态
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deletingEmployeeId, setDeletingEmployeeId] = useState<number | null>(null)
+
   // 登录
   const handleLogin = async () => {
     if (!username || !password) {
@@ -104,6 +115,69 @@ const HrAdminPage = () => {
     } catch (error: any) {
       console.error('登录失败:', error)
       Taro.showToast({ title: '登录失败', icon: 'none' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 修改密码
+  const handleChangePassword = async () => {
+    if (!currentPwd || !newPwd || !confirmPwd) {
+      Taro.showToast({ title: '请填写完整', icon: 'none' })
+      return
+    }
+    if (newPwd.length < 6) {
+      Taro.showToast({ title: '新密码至少6位', icon: 'none' })
+      return
+    }
+    if (newPwd !== confirmPwd) {
+      Taro.showToast({ title: '两次密码不一致', icon: 'none' })
+      return
+    }
+    try {
+      const res = await Network.request({
+        url: '/api/hr/auth/change-password',
+        method: 'POST',
+        data: { currentPassword: currentPwd, newPassword: newPwd },
+        header: { Authorization: `Bearer ${token}` },
+      })
+      console.log('修改密码响应:', res.data)
+      if (res.data.code === 200) {
+        Taro.showToast({ title: '密码修改成功', icon: 'success' })
+        setShowChangePwd(false)
+        setCurrentPwd('')
+        setNewPwd('')
+        setConfirmPwd('')
+      } else {
+        Taro.showToast({ title: res.data.msg || '修改失败', icon: 'none' })
+      }
+    } catch (error: any) {
+      Taro.showToast({ title: error.message || '修改失败', icon: 'none' })
+    }
+  }
+
+  // 删除员工
+  const handleDeleteEmployee = async () => {
+    if (!deletingEmployeeId) return
+    try {
+      setLoading(true)
+      const res = await Network.request({
+        url: `/api/hr/employees/${deletingEmployeeId}/delete`,
+        method: 'POST',
+        header: { Authorization: `Bearer ${token}` },
+      })
+      console.log('删除员工响应:', res.data)
+      if (res.data.code === 200) {
+        Taro.showToast({ title: '删除成功', icon: 'success' })
+        setShowDeleteConfirm(false)
+        setDeletingEmployeeId(null)
+        setDetail(null)
+        loadEmployeeList()
+      } else {
+        Taro.showToast({ title: res.data.msg || '删除失败', icon: 'none' })
+      }
+    } catch (error: any) {
+      Taro.showToast({ title: error.message || '删除失败', icon: 'none' })
     } finally {
       setLoading(false)
     }
@@ -356,7 +430,7 @@ const HrAdminPage = () => {
                         return (
                           <View
                             key={type}
-                            className="border border-gray-200 rounded-lg overflow-hidden"
+                            className="border border-gray-200 rounded-lg overflow-hidden relative"
                             onClick={() => isImage && previewImage(file.signed_url || file.url, allImageUrls)}
                           >
                             {isImage ? (
@@ -364,6 +438,13 @@ const HrAdminPage = () => {
                             ) : (
                               <View className="p-3 flex flex-col items-center justify-center" style={{ minHeight: '160rpx' }}>
                                 <FileText size={24} color="#6b7280" />
+                              </View>
+                            )}
+                            {file.verification_override && (
+                              <View className="absolute top-1 right-1">
+                                <Badge variant="outline" className="bg-yellow-100 text-yellow-700 text-xs border-yellow-300">
+                                  待复核
+                                </Badge>
                               </View>
                             )}
                             <View className="p-2">
@@ -396,7 +477,14 @@ const HrAdminPage = () => {
                               </View>
                             )}
                             <View className="flex-1 min-w-0">
-                              <Text className="block text-sm text-gray-900 truncate">{file.file_name}</Text>
+                              <View className="flex items-center gap-1">
+                                <Text className="block text-sm text-gray-900 truncate">{file.file_name}</Text>
+                                {file.verification_override && (
+                                  <Badge variant="outline" className="bg-yellow-100 text-yellow-700 border-yellow-300" style={{ fontSize: '10px' }}>
+                                    待复核
+                                  </Badge>
+                                )}
+                              </View>
                               <Text className="block text-xs text-gray-500 mt-1">{formatFileSize(file.file_size)}</Text>
                             </View>
                             <View className="flex-shrink-0">
@@ -418,11 +506,24 @@ const HrAdminPage = () => {
 
           {/* 下载按钮 */}
           <Button
-            className="w-full"
+            className="w-full mb-3"
             onClick={() => downloadEmployeeFiles(detail.employee.id, detail.employee.name)}
           >
             <Download size={16} color="#ffffff" className="mr-2" />
             打包下载全部资料
+          </Button>
+
+          {/* 删除按钮 */}
+          <Button
+            className="w-full"
+            variant="outline"
+            onClick={() => {
+              setDeletingEmployeeId(detail.employee.id)
+              setShowDeleteConfirm(true)
+            }}
+          >
+            <Trash2 size={16} color="#dc2626" className="mr-2" />
+            删除员工资料
           </Button>
         </View>
       </View>
@@ -495,9 +596,14 @@ const HrAdminPage = () => {
   return (
     <View className="min-h-screen bg-gray-50">
       <View className="bg-white border-b border-gray-200 p-4">
-        <Text className="block text-lg font-bold text-gray-900 mb-3">
-          HR 管理系统
-        </Text>
+        <View className="flex justify-between items-center mb-3">
+          <Text className="block text-lg font-bold text-gray-900">
+            HR 管理系统
+          </Text>
+          <View onClick={() => setShowChangePwd(true)}>
+            <Settings size={20} color="#6b7280" />
+          </View>
+        </View>
 
         {/* 搜索栏 */}
         <View className="flex gap-2 mb-3">
@@ -603,6 +709,77 @@ const HrAdminPage = () => {
           </View>
         )}
       </View>
+
+      {/* 修改密码弹窗 */}
+      {showChangePwd && (
+        <View className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={() => setShowChangePwd(false)}>
+          <View className="bg-white rounded-xl mx-8 p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation && e.stopPropagation()}>
+            <Text className="block text-lg font-semibold text-gray-900 mb-4">修改密码</Text>
+            <View className="flex flex-col gap-3">
+              <View>
+                <Text className="block text-sm text-gray-600 mb-1">当前密码</Text>
+                <View className="bg-gray-50 rounded-lg px-3 py-2">
+                  <Input
+                    className="w-full bg-transparent"
+                    password
+                    placeholder="请输入当前密码"
+                    value={currentPwd}
+                    onInput={(e) => setCurrentPwd(e.detail.value)}
+                  />
+                </View>
+              </View>
+              <View>
+                <Text className="block text-sm text-gray-600 mb-1">新密码</Text>
+                <View className="bg-gray-50 rounded-lg px-3 py-2">
+                  <Input
+                    className="w-full bg-transparent"
+                    password
+                    placeholder="至少6位"
+                    value={newPwd}
+                    onInput={(e) => setNewPwd(e.detail.value)}
+                  />
+                </View>
+              </View>
+              <View>
+                <Text className="block text-sm text-gray-600 mb-1">确认新密码</Text>
+                <View className="bg-gray-50 rounded-lg px-3 py-2">
+                  <Input
+                    className="w-full bg-transparent"
+                    password
+                    placeholder="再次输入新密码"
+                    value={confirmPwd}
+                    onInput={(e) => setConfirmPwd(e.detail.value)}
+                  />
+                </View>
+              </View>
+              <Button className="w-full mt-2" onClick={handleChangePassword}>
+                确认修改
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 删除确认弹窗 */}
+      {showDeleteConfirm && (
+        <View className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={() => setShowDeleteConfirm(false)}>
+          <View className="bg-white rounded-xl mx-8 p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation && e.stopPropagation()}>
+            <View className="flex items-center gap-2 mb-3">
+              <TriangleAlert size={20} color="#dc2626" />
+              <Text className="block text-lg font-semibold text-gray-900">确认删除</Text>
+            </View>
+            <Text className="block text-sm text-gray-600 mb-4">确定删除该员工的所有资料？此操作不可恢复，包括所有已上传的证件文件。</Text>
+            <View className="flex gap-3">
+              <Button className="flex-1" variant="outline" onClick={() => { setShowDeleteConfirm(false); setDeletingEmployeeId(null) }}>
+                取消
+              </Button>
+              <Button className="flex-1" onClick={handleDeleteEmployee}>
+                确认删除
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   )
 }

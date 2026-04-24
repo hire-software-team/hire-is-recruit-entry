@@ -139,6 +139,7 @@ export class HrController {
         fileKey: string
         fileName: string
         fileSize: number
+        verificationOverride?: boolean
       }>
     },
     @Req() req: any,
@@ -187,6 +188,7 @@ export class HrController {
         file_name: file.fileName,
         file_size: file.fileSize,
         file_type_ext: ext,
+        verification_override: file.verificationOverride || false,
       })
       fileRecords.push(fileRecord)
     }
@@ -213,7 +215,11 @@ export class HrController {
     @Query('phone') phone?: string,
   ) {
     console.log('管理员查询员工列表')
-    return await this.hrService.getEmployeeList({ name, phone })
+    const result = await this.hrService.getEmployeeList({ name, phone })
+    return {
+      code: 200,
+      data: result,
+    }
   }
 
   /**
@@ -290,6 +296,55 @@ export class HrController {
     }
 
     await archive.finalize()
+  }
+
+  /**
+   * 删除员工资料（管理员，JWT 鉴权）
+   */
+  @Post('employees/:id/delete')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  async deleteEmployee(@Param('id') id: string) {
+    console.log('管理员删除员工资料:', id)
+    try {
+      await this.hrService.deleteEmployee(Number(id))
+      return {
+        code: 200,
+        msg: '删除成功',
+      }
+    } catch (error: any) {
+      console.error('删除员工失败:', error)
+      throw new BadRequestException(error.message || '删除失败')
+    }
+  }
+
+  /**
+   * 修改管理员密码（JWT 鉴权）
+   */
+  @Post('auth/change-password')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  async changePassword(
+    @Body() body: { currentPassword: string; newPassword: string },
+    @Req() req: any,
+  ) {
+    console.log('管理员修改密码')
+    if (!body.currentPassword || !body.newPassword) {
+      throw new BadRequestException('请输入当前密码和新密码')
+    }
+    if (body.newPassword.length < 6) {
+      throw new BadRequestException('新密码长度至少6位')
+    }
+
+    try {
+      await this.hrService.changePassword(req.user.userId, body.currentPassword, body.newPassword)
+      return {
+        code: 200,
+        msg: '密码修改成功',
+      }
+    } catch (error: any) {
+      throw new BadRequestException(error.message || '修改密码失败')
+    }
   }
 
   /**

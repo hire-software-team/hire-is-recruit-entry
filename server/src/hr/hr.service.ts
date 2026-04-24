@@ -143,6 +143,7 @@ export class HrService {
     file_name: string
     file_size: number
     file_type_ext: string
+    verification_override?: boolean
   }): Promise<EmployeeFile> {
     const { data, error } = await this.supabase
       .from('employee_files')
@@ -153,6 +154,7 @@ export class HrService {
         file_name: fileData.file_name,
         file_size: fileData.file_size,
         file_type_ext: fileData.file_type_ext,
+        verification_override: fileData.verification_override || false,
       })
       .select()
       .single()
@@ -360,7 +362,7 @@ export class HrService {
       return null
     }
 
-    const systemPrompt = `你是一个专业的证件图像审核助手。你需要严格判断用户上传的图片是否符合指定的证件类型要求，证件是否完整，文字是否清晰可识别。
+    const systemPrompt = `你是一个证件图像审核助手。你需要判断用户上传的图片是否符合指定的证件类型要求，并检查证件是否完整、文字是否清晰可识别。
 
 目标证件类型：${docInfo.label}
 证件特征描述：${docInfo.description}
@@ -368,13 +370,13 @@ export class HrService {
 请严格按照以下JSON格式输出，不要输出任何其他内容：
 {"passed":true或false,"documentTypeMatch":true或false,"isComplete":true或false,"isTextLegible":true或false,"isClear":true或false,"reason":"不通过的具体原因，通过时为空字符串"}
 
-判断规则（必须逐项严格检查）：
+判断规则：
 1. documentTypeMatch：图片内容是否与目标证件类型匹配。如果图片是其他类型的证件、或者不是证件，则为false。
-2. isComplete：证件是否完整展示。以下情况为false：证件被裁切只显示部分区域、证件边缘被遮挡导致关键信息缺失、证件折叠或破损导致内容不完整。
-3. isTextLegible：证件上的文字是否清晰可识别。以下情况为false：文字模糊无法辨认具体内容、文字因拍摄角度倾斜导致严重变形、文字被手指或其他物体遮挡、文字因反光或阴影导致无法读取。
-4. isClear：整体图像质量是否合格。以下情况为false：图像严重模糊（对焦不清）、过度遮挡、严重反光导致大面积信息丢失、过暗或过曝无法辨认。
-5. passed = documentTypeMatch && isComplete && isTextLegible && isClear
-6. reason：不通过时给出具体原因，必须指出具体哪项不通过及详细说明。例如"证件不完整，右上角被裁切"或"证件上的姓名和身份证号模糊无法识别，请重新拍摄"。通过时为空字符串。`
+2. isComplete：证件是否完整展示。以下情况为false：证件大面积被裁切导致关键信息（如姓名、身份证号）缺失、证件严重破损。以下情况为true（可接受）：证件边缘有少量留白但不影响信息读取、证件四角略有裁切但所有文字信息完整可见。
+3. isTextLegible：证件上的关键文字是否清晰可识别。以下情况为false：文字严重模糊完全无法辨认、大面积文字被遮挡。以下情况为true（可接受）：轻微的拍摄角度倾斜但文字仍可正常阅读、局部轻微反光但不影响关键信息读取、文字略有小幅变形但可辨认。
+4. isClear：整体图像质量是否合格。以下情况为false：图像严重模糊（完全看不清内容）、大面积遮挡导致证件无法辨认。以下情况为true（可接受）：轻微的对焦不实但文字仍可辨别、局部轻度阴影但不影响整体识别。
+5. passed = documentTypeMatch && isComplete && isTextLegible && isClear。注意：只有严重影响信息读取的问题才判为false，轻微的拍摄瑕疵应视为可接受。
+6. reason：不通过时给出具体原因，必须指出具体哪项不通过及详细说明。通过时为空字符串。`
 
     try {
       console.log('开始校验证件图片:', { fileType, education })
@@ -482,5 +484,98 @@ export class HrService {
 
     console.log(`孤儿文件清理完成: 扫描 ${storageKeys.length}, 删除 ${deleted}, 保留 ${kept}`)
     return { scanned: storageKeys.length, deleted, kept }
+  }
+
+  /**
+   * 删除员工及其所有文件
+   */
+  async deleteEmployee(id: number): Promise<void> {
+    // 1. 获取员工的所有文件记录
+    const { data: files, error: fileError } = await this.supabase
+      .from('employee_files')
+      .select('file_key')
+      .eq('employee_id', id)
+
+    if (fileError) {
+      console.error('查询员工文件失败:', fileError)
+      throw new Error(`查询员工文件失败: ${fileError.message}`)
+    }
+
+    // 2. 删除 Storage 中的文件
+    if (files && files.length > 0) {
+      for (const file of files) {
+        await this.storageService.deleteFile(file.file_key)
+      }
+    }
+
+    // 3. 删除数据库中的文件记录
+    const { error: deleteFilesError } = await this.supabase
+      .from('employee_files')
+      .delete()
+      .eq('employee_id', id)
+
+    if (deleteFilesError) {
+      console.error('删除员工文件记录失败:', deleteFilesError)
+      throw new Error(`删除员工文件记录失败: ${deleteFilesError.message}`)
+    }
+
+    // 4. 删除员工记录
+    const { error: deleteEmpError } = await this.supabase
+      .from('employees')
+      .delete()
+      .eq('id', id)
+
+    if (deleteEmpError) {
+      console.error('删除员工记录失败:', deleteEmpError)
+      throw new Error(`删除员工记录失败: ${deleteEmpError.message}`)
+    }
+
+    console.log('员工及资料已删除:', id)
+  }
+
+  /**
+   * 修改管理员密码
+   */
+  async changePassword(userId: number, currentPassword: string, newPassword: string): Promise<void> {
+    if (newPassword.length < 6) {
+      throw new Error('新密码长度至少6位')
+    }
+
+    // 验证当前密码
+    const { data: admin, error } = await this.supabase
+      .from('admin_users')
+      .select('id, password')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (error || !admin) {
+      throw new Error('用户不存在')
+    }
+
+    // 比对当前密码
+    const isBcryptHash = admin.password.startsWith('$2a$') || admin.password.startsWith('$2b$')
+    let isValid = false
+    if (isBcryptHash) {
+      isValid = await bcrypt.compare(currentPassword, admin.password)
+    } else {
+      isValid = admin.password === currentPassword
+    }
+
+    if (!isValid) {
+      throw new Error('当前密码错误')
+    }
+
+    // 哈希新密码并更新
+    const hashedPassword = await bcrypt.hash(newPassword, 10)
+    const { error: updateError } = await this.supabase
+      .from('admin_users')
+      .update({ password: hashedPassword })
+      .eq('id', userId)
+
+    if (updateError) {
+      throw new Error(`修改密码失败: ${updateError.message}`)
+    }
+
+    console.log('管理员密码已修改:', maskSensitive(`userId=${userId}`))
   }
 }

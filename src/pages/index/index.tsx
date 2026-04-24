@@ -18,6 +18,7 @@ interface FileInfo {
   fileSize: number
   fileKey: string
   fileMimetype: string
+  verificationOverride?: boolean
 }
 
 interface VerificationResult {
@@ -116,6 +117,9 @@ const IndexPage = () => {
   const [isUploading, setIsUploading] = useState(false)
   const [verifyingType, setVerifyingType] = useState<string | null>(null)
   const [verificationResults, setVerificationResults] = useState<Map<string, VerificationResult>>(new Map())
+  const [showVerifyFailModal, setShowVerifyFailModal] = useState(false)
+  const [verifyFailInfo, setVerifyFailInfo] = useState<{ reason: string; fileType: string; fileData: any } | null>(null)
+  const [pendingFileData, setPendingFileData] = useState<any>(null)
   const [submittedData, setSubmittedData] = useState<{
     employee: any
     files: any[]
@@ -310,12 +314,10 @@ const IndexPage = () => {
 
             if (verification && !verification.verified) {
               console.log('证件校验未通过:', verification.reason)
-              Taro.showModal({
-                title: '资料校验未通过',
-                content: verification.reason || '上传的图片不符合要求，请重新上传',
-                showCancel: false,
-                confirmText: '我知道了',
-              })
+              // 弹出选择弹窗：重新上传 或 仍然提交
+              setVerifyFailInfo({ reason: verification.reason || '上传的图片不符合要求', fileType, fileData: data.data })
+              setPendingFileData(data.data)
+              setShowVerifyFailModal(true)
             } else {
               const newFiles = [...uploadedFiles, {
                 fileType,
@@ -371,6 +373,34 @@ const IndexPage = () => {
     saveDraft(name, phone, education, joinDate, remainingFiles)
   }
 
+  // 处理校验未通过 - 仍然提交（申诉覆盖）
+  const handleVerifyOverride = () => {
+    if (pendingFileData && verifyFailInfo) {
+      const newFiles = [...uploadedFiles, {
+        fileType: verifyFailInfo.fileType,
+        fileName: pendingFileData.fileName,
+        filePath: pendingFileData.url,
+        fileSize: pendingFileData.fileSize,
+        fileKey: pendingFileData.fileKey,
+        fileMimetype: pendingFileData.fileMimetype,
+        verificationOverride: true,
+      }]
+      setUploadedFiles(newFiles)
+      saveDraft(name, phone, education, joinDate, newFiles)
+      Taro.showToast({ title: '已添加（待HR确认）', icon: 'none' })
+    }
+    setShowVerifyFailModal(false)
+    setVerifyFailInfo(null)
+    setPendingFileData(null)
+  }
+
+  // 处理校验未通过 - 重新上传
+  const handleVerifyReject = () => {
+    setShowVerifyFailModal(false)
+    setVerifyFailInfo(null)
+    setPendingFileData(null)
+  }
+
   const handleSubmit = async () => {
     if (!name.trim()) { Taro.showToast({ title: '请输入姓名', icon: 'none' }); return }
     if (!phone.trim()) { Taro.showToast({ title: '请输入手机号', icon: 'none' }); return }
@@ -415,6 +445,7 @@ const IndexPage = () => {
             file_name: f.fileName,
             file_size: f.fileSize,
             file_mimetype: f.fileMimetype,
+            verification_override: f.verificationOverride || false,
           })),
         },
       })
@@ -502,6 +533,11 @@ const IndexPage = () => {
               {verifyResult?.verified && (
                 <View className="absolute top-1 left-1">
                   <CircleCheck size={16} color="#16a34a" />
+                </View>
+              )}
+              {file.verificationOverride && (
+                <View className="absolute top-1 right-7 bg-yellow-100 rounded-full px-1">
+                  <Text className="block text-yellow-700" style={{ fontSize: '8px' }}>待复核</Text>
                 </View>
               )}
             </View>
@@ -807,7 +843,12 @@ const IndexPage = () => {
                           <FileText size={20} color="#dc2626" />
                         </View>
                       )}
-                      <Text className="block text-sm text-gray-700 flex-1 truncate">{file.fileName}</Text>
+                      <View className="flex-1 min-w-0 flex items-center gap-1">
+                        <Text className="block text-sm text-gray-700 truncate">{file.fileName}</Text>
+                        {file.verificationOverride && (
+                          <Text className="block text-xs text-yellow-600 flex-shrink-0">待复核</Text>
+                        )}
+                      </View>
                       <View onClick={() => handleDeleteFile(file.fileKey)}>
                         <Trash2 size={16} color="#dc2626" />
                       </View>
@@ -839,6 +880,25 @@ const IndexPage = () => {
       <Button className="w-full" onClick={handleSubmit} disabled={isUploading}>
         {isUploading ? '提交中...' : '提交资料'}
       </Button>
+
+      {/* AI校验未通过弹窗 */}
+      {showVerifyFailModal && verifyFailInfo && (
+        <View className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={handleVerifyReject}>
+          <View className="bg-white rounded-xl mx-8 p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation && e.stopPropagation()}>
+            <Text className="block text-lg font-semibold text-gray-900 mb-2">资料校验未通过</Text>
+            <Text className="block text-sm text-gray-600 mb-4">{verifyFailInfo.reason}</Text>
+            <View className="flex flex-col gap-3">
+              <Button className="w-full" onClick={handleVerifyReject}>
+                重新上传
+              </Button>
+              <Button className="w-full" variant="outline" onClick={handleVerifyOverride}>
+                仍然提交
+              </Button>
+              <Text className="block text-xs text-gray-400 text-center">选择&ldquo;仍然提交&rdquo;后，HR将会人工复核此文件</Text>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   )
 }
