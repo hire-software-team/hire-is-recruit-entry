@@ -35,6 +35,7 @@ export function maskSensitive(data: string): string {
  */
 export class RateLimiter {
   private requests: Map<string, number[]> = new Map()
+  private lastCleanup = Date.now()
 
   /**
    * 检查是否超过限流
@@ -57,6 +58,20 @@ export class RateLimiter {
 
     validRequests.push(now)
     this.requests.set(key, validRequests)
+
+    // 定期清理所有过期 key（每5分钟），防止内存泄漏
+    if (now - this.lastCleanup > 5 * 60 * 1000) {
+      for (const [k, timestamps] of this.requests) {
+        const filtered = timestamps.filter(time => now - time < windowMs)
+        if (filtered.length === 0) {
+          this.requests.delete(k)
+        } else {
+          this.requests.set(k, filtered)
+        }
+      }
+      this.lastCleanup = now
+    }
+
     return false
   }
 }

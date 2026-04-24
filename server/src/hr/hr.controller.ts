@@ -80,6 +80,7 @@ export class HrController {
     @UploadedFile() file: Express.Multer.File,
     @Query('fileType') fileType: string,
     @Query('education') education: string,
+    @Query('skipVerify') skipVerify: string,
     @Req() req: any,
   ) {
     // IP 限流：每分钟最多 10 次
@@ -107,25 +108,27 @@ export class HrController {
 
     console.log('文件上传成功:', { key, url })
 
-    // AI 校验
+    // AI 校验（skipVerify=1 时跳过，用于"仍然提交"申诉重新上传）
     let verification: any = null
-    if (file.mimetype.startsWith('image/') && !['medical_report'].includes(fileType)) {
+    const shouldVerify = !skipVerify && file.mimetype.startsWith('image/') && !['medical_report'].includes(fileType)
+    if (shouldVerify) {
       // 使用签名 URL 进行校验
       const signedUrl = await this.storageService.getSignedUrl(key, 1800)
       verification = await this.hrService.verifyDocumentImage(signedUrl, fileType, education)
 
       if (verification && !verification.verified) {
-        // 校验未通过，保留文件（用户可选择"仍然提交"申诉，文件仍需可用）
-        console.log('校验未通过，保留文件供申诉:', key)
+        // 校验未通过，删除已上传的文件（用户选择"仍然提交"时需重新上传）
+        await this.storageService.deleteFile(key)
+        console.log('校验未通过，已删除文件:', key)
 
         return {
           code: 200,
           msg: '校验未通过',
           data: {
-            fileKey: key,
+            fileKey: '',  // 文件已删除，无有效 key
             fileName: file.originalname,
             fileSize: file.size,
-            url,
+            url: '',
             fileMimetype: file.mimetype,
             verification,
           },
@@ -179,6 +182,11 @@ export class HrController {
 
     if (!body.name || !body.phone) {
       throw new BadRequestException('姓名和手机号不能为空')
+    }
+
+    // 手机号格式校验：必须为1开头的11位数字
+    if (!/^1[3-9]\d{9}$/.test(body.phone)) {
+      throw new BadRequestException('手机号格式不正确，请输入11位手机号')
     }
 
     if (!body.education) {
@@ -307,20 +315,37 @@ export class HrController {
     const archive = archiver('zip', { zlib: { level: 5 } })
     archive.pipe(res)
 
-    for (const file of files) {
-      try {
-        const fileBuffer = await this.storageService.downloadFile(file.file_key)
-        const typeName = this.getFileTypeName(file.file_type)
-        const ext = file.file_name.split('.').pop() || mimeTypeToExt(file.file_type_ext) || 'bin'
-        const fileName = `${typeName}_${file.id}.${ext}`
-
-        archive.append(fileBuffer, { name: fileName })
-      } catch (error) {
-        console.error(`下载文件 ${file.file_key} 失败:`, error)
+    // 确保异常时流被正确关闭
+    archive.on('error', (err) => {
+      console.error('归档流错误:', err)
+      if (!res.headersSent) {
+        res.status(500).json({ code: 500, msg: '打包下载失败' })
       }
-    }
+      archive.abort()
+    })
 
-    await archive.finalize()
+    try {
+      for (const file of files) {
+        try {
+          const fileBuffer = await this.storageService.downloadFile(file.file_key)
+          const typeName = this.getFileTypeName(file.file_type)
+          const ext = file.file_name.split('.').pop() || mimeTypeToExt(file.file_type_ext) || 'bin'
+          const fileName = `${typeName}_${file.id}.${ext}`
+
+          archive.append(fileBuffer, { name: fileName })
+        } catch (error) {
+          console.error(`下载文件 ${file.file_key} 失败:`, error)
+        }
+      }
+
+      await archive.finalize()
+    } catch (error) {
+      console.error('打包下载异常:', error)
+      if (!res.headersSent) {
+        res.status(500).json({ code: 500, msg: '打包下载失败' })
+      }
+      archive.abort()
+    }
   }
 
   /**

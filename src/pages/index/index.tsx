@@ -42,6 +42,9 @@ const EDUCATION_OPTIONS = [
 const SKIP_VERIFY_TYPES = ['medical_report']
 
 // 文件类型配置（身份证、体检报告、离职证明、银行卡）
+// 最大文件大小：10MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024
+
 const FILE_TYPE_CONFIG: Record<string, { name: string; required: boolean; maxCount: number; accept: 'image' | 'all' }> = {
   id_card_front: { name: '身份证正面', required: true, maxCount: 1, accept: 'image' },
   id_card_back: { name: '身份证背面', required: true, maxCount: 1, accept: 'image' },
@@ -127,7 +130,6 @@ const IndexPage = () => {
   const [verificationResults, setVerificationResults] = useState<Map<string, VerificationResult>>(new Map())
   const [showVerifyFailModal, setShowVerifyFailModal] = useState(false)
   const [verifyFailInfo, setVerifyFailInfo] = useState<{ reason: string; fileType: string; fileData: any } | null>(null)
-  const [pendingFileData, setPendingFileData] = useState<any>(null)
   const [submittedData, setSubmittedData] = useState<{
     employee: any
     files: any[]
@@ -165,12 +167,19 @@ const IndexPage = () => {
     }
   }
 
-  // 保存已提交数据到 localStorage
+  // 保存已提交数据到 localStorage（移除敏感的 fileKey）
   const saveSubmittedData = (emp: any, files: FileInfo[]) => {
     try {
+      const safeFiles = files.map(f => ({
+        fileType: f.fileType,
+        fileName: f.fileName,
+        fileSize: f.fileSize,
+        fileMimetype: f.fileMimetype,
+        verificationOverride: f.verificationOverride,
+      }))
       Taro.setStorageSync(SUBMITTED_KEY, JSON.stringify({
         employee: emp,
-        files,
+        files: safeFiles,
         submittedAt: Date.now(),
       }))
     } catch (e) {
@@ -256,7 +265,7 @@ const IndexPage = () => {
   }
 
   // 选择并上传文件
-  const handleChooseFile = async (fileType: string) => {
+  const handleChooseFile = async (fileType: string, skipVerify = false) => {
     if (submittedData) return
 
     const isEduCert = EDU_CERT_SLOTS.some(s => s.key === fileType)
@@ -294,18 +303,24 @@ const IndexPage = () => {
       setIsUploading(true)
       for (const file of files) {
         try {
+          // 前端文件大小校验
+          if (file.size > MAX_FILE_SIZE) {
+            Taro.showToast({ title: `文件${file.name || ''}超过10MB限制`, icon: 'none' })
+            continue
+          }
+
           console.log('上传文件:', file.name, '大小:', file.size, '路径:', file.path, '类型:', fileType)
 
-          // 判断是否需要AI校验（图片类型都需要）
-          const needsVerify = config.accept === 'image' && !SKIP_VERIFY_TYPES.includes(fileType)
+          // 判断是否需要AI校验（图片类型都需要，除非 skipVerify=true）
+          const needsVerify = !skipVerify && config.accept === 'image' && !SKIP_VERIFY_TYPES.includes(fileType)
           if (needsVerify) {
             setVerifyingType(fileType)
             Taro.showToast({ title: 'AI校验中，请稍候...', icon: 'none', duration: 10000 })
           }
 
-          // 上传时传递 fileType 和 education 参数
+          // 上传时传递 fileType、education 和 skipVerify 参数
           const uploadRes = await Network.uploadFile({
-            url: `/api/hr/files/upload?fileType=${encodeURIComponent(fileType)}&education=${encodeURIComponent(education)}`,
+            url: `/api/hr/files/upload?fileType=${encodeURIComponent(fileType)}&education=${encodeURIComponent(education)}${skipVerify ? '&skipVerify=1' : ''}`,
             filePath: file.path,
             name: 'file',
           })
@@ -324,7 +339,6 @@ const IndexPage = () => {
               console.log('证件校验未通过:', verification.reason)
               // 弹出选择弹窗：重新上传 或 仍然提交
               setVerifyFailInfo({ reason: verification.reason || '上传的图片不符合要求', fileType, fileData: data.data })
-              setPendingFileData(data.data)
               setShowVerifyFailModal(true)
             } else {
               const newFiles = [...uploadedFiles, {
@@ -334,6 +348,7 @@ const IndexPage = () => {
                 fileSize: data.data.fileSize,
                 fileKey,
                 fileMimetype: data.data.fileMimetype,
+                verificationOverride: skipVerify ? true : undefined,
               }]
               setUploadedFiles(newFiles)
               saveDraft(name, phone, education, joinDate, newFiles)
@@ -342,7 +357,9 @@ const IndexPage = () => {
                 setVerificationResults(prev => new Map(prev).set(fileKey, verification))
               }
 
-              if (verification) {
+              if (skipVerify) {
+                Taro.showToast({ title: '已添加（待HR确认）', icon: 'none' })
+              } else if (verification) {
                 Taro.showToast({ title: '校验通过', icon: 'success' })
               } else {
                 Taro.showToast({ title: '上传成功', icon: 'success' })
@@ -382,36 +399,26 @@ const IndexPage = () => {
   }
 
   // 处理校验未通过 - 仍然提交（申诉覆盖）
+  // 需要重新上传文件（因为后端在校验失败时已删除文件）
   const handleVerifyOverride = () => {
-    if (pendingFileData && verifyFailInfo) {
-      const newFiles = [...uploadedFiles, {
-        fileType: verifyFailInfo.fileType,
-        fileName: pendingFileData.fileName,
-        filePath: pendingFileData.url,
-        fileSize: pendingFileData.fileSize,
-        fileKey: pendingFileData.fileKey,
-        fileMimetype: pendingFileData.fileMimetype,
-        verificationOverride: true,
-      }]
-      setUploadedFiles(newFiles)
-      saveDraft(name, phone, education, joinDate, newFiles)
-      Taro.showToast({ title: '已添加（待HR确认）', icon: 'none' })
+    // 关闭弹窗，触发重新上传（不带AI校验）
+    if (verifyFailInfo) {
+      handleChooseFile(verifyFailInfo.fileType, true)  // skipVerify=true 跳过校验重新上传
     }
     setShowVerifyFailModal(false)
     setVerifyFailInfo(null)
-    setPendingFileData(null)
   }
 
   // 处理校验未通过 - 重新上传
   const handleVerifyReject = () => {
     setShowVerifyFailModal(false)
     setVerifyFailInfo(null)
-    setPendingFileData(null)
   }
 
   const handleSubmit = async () => {
     if (!name.trim()) { Taro.showToast({ title: '请输入姓名', icon: 'none' }); return }
     if (!phone.trim()) { Taro.showToast({ title: '请输入手机号', icon: 'none' }); return }
+    if (!/^1[3-9]\d{9}$/.test(phone.trim())) { Taro.showToast({ title: '请输入正确的11位手机号', icon: 'none' }); return }
     if (!education) { Taro.showToast({ title: '请选择学历', icon: 'none' }); return }
     if (!joinDate) { Taro.showToast({ title: '请选择入职日期', icon: 'none' }); return }
 

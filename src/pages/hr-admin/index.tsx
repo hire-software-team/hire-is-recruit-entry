@@ -285,7 +285,7 @@ const HrAdminPage = () => {
                 Taro.hideLoading()
                 Taro.showToast({ title: '下载失败', icon: 'none' })
               }
-            } else {
+            } else if (Taro.getEnv() === Taro.ENV_TYPE.WEB) {
               // H5 环境：通过 fetch 获取 blob 再下载
               Taro.showLoading({ title: '打包下载中...' })
               const downloadUrl = `/api/hr/employees/${employeeId}/download`
@@ -311,6 +311,8 @@ const HrAdminPage = () => {
               } else {
                 Taro.showToast({ title: '下载失败', icon: 'none' })
               }
+            } else {
+              Taro.showToast({ title: '当前环境暂不支持下载', icon: 'none' })
             }
           } catch (error) {
             Taro.hideLoading()
