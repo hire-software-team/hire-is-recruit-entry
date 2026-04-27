@@ -180,6 +180,8 @@ export class HrController {
     if (!isValid) {
       throw new BadRequestException('无权删除该文件')
     }
+    // 删除文件并清除会话记录
+    this.hrService.removeUploadSession(body.key)
     try {
       await this.storageService.deleteFile(body.key)
       return { code: 200, msg: '文件已清理' }

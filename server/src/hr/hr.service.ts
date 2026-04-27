@@ -132,15 +132,22 @@ export class HrService {
   }
 
   /**
-   * 验证 fileKey 是否属于指定 IP 的上传会话
+   * 验证 fileKey 是否属于指定 IP 的上传会话（非破坏性，允许多次验证以支持提交重试）
    */
   validateUploadSession(fileKey: string, clientIp: string): boolean {
     const session = this.uploadSessions.get(fileKey)
     if (!session) return false
-    if (session.clientIp !== clientIp) return false
-    // 验证后清除，防止重复使用
-    this.uploadSessions.delete(fileKey)
+    // IP 比较：兼容 IPv4 映射的 IPv6 地址（::ffff:127.0.0.1 == 127.0.0.1）
+    const normalizeIp = (ip: string) => ip.replace(/^::ffff:/, '')
+    if (normalizeIp(session.clientIp) !== normalizeIp(clientIp)) return false
     return true
+  }
+
+  /**
+   * 删除上传会话记录（清理文件时调用）
+   */
+  removeUploadSession(fileKey: string): void {
+    this.uploadSessions.delete(fileKey)
   }
 
   /**

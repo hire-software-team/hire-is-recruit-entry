@@ -45,10 +45,10 @@ const SKIP_VERIFY_TYPES = ['medical_report']
 // 最大文件大小：10MB
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 
-const FILE_TYPE_CONFIG: Record<string, { name: string; required: boolean; maxCount: number; accept: 'image' | 'all' }> = {
+const FILE_TYPE_CONFIG: Record<string, { name: string; required: boolean; maxCount: number; accept: 'image' | 'file' | 'mixed' }> = {
   id_card_front: { name: '身份证正面', required: true, maxCount: 1, accept: 'image' },
   id_card_back: { name: '身份证背面', required: true, maxCount: 1, accept: 'image' },
-  medical_report: { name: '体检报告', required: true, maxCount: 5, accept: 'all' },
+  medical_report: { name: '体检报告', required: true, maxCount: 5, accept: 'mixed' },
   resignation_proof: { name: '离职证明', required: true, maxCount: 1, accept: 'image' },
   bank_card_front: { name: '银行卡正面', required: true, maxCount: 1, accept: 'image' },
   bank_card_back: { name: '银行卡反面', required: true, maxCount: 1, accept: 'image' },
@@ -236,22 +236,27 @@ const IndexPage = () => {
   const handleEducationChange = (e) => {
     const newEdu = EDUCATION_OPTIONS[e.detail.value]?.value || ''
     setEducation(newEdu)
-    // 清空学历学位证书相关文件
-    const eduKeys = EDU_CERT_SLOTS.map(s => s.key)
-    const remainingFiles = uploadedFiles.filter(f => !eduKeys.includes(f.fileType))
-    setUploadedFiles(remainingFiles)
-    setVerificationResults(prev => {
-      const next = new Map(prev)
-      for (const key of eduKeys) {
-        // 删除相关校验结果
-        for (const [k] of next) {
-          const file = uploadedFiles.find(f => f.fileKey === k && f.fileType === key)
-          if (file) next.delete(k)
-        }
-      }
-      return next
-    })
-    saveDraft(name, phone, newEdu, joinDate, remainingFiles)
+
+    // 只删除不属于新学历槽位范围的文件，保留仍有效的证书
+    const newRange = getEduSlotRange(newEdu)
+    if (newRange.end >= newRange.start) {
+      // 新学历可见的 slot keys
+      const visibleSlotKeys = EDU_CERT_SLOTS.slice(newRange.start, newRange.end + 1).map(s => s.key)
+      // 只移除不再属于新学历范围的文件
+      const remainingFiles = uploadedFiles.filter(f => {
+        const isEduFile = EDU_CERT_SLOTS.some(s => s.key === f.fileType)
+        if (!isEduFile) return true  // 非学历文件保留
+        return visibleSlotKeys.includes(f.fileType)  // 新学历范围内的文件保留
+      })
+      setUploadedFiles(remainingFiles)
+      saveDraft(name, phone, newEdu, joinDate, remainingFiles)
+    } else {
+      // 未选择学历，清除所有学历文件
+      const eduKeys = EDU_CERT_SLOTS.map(s => s.key)
+      const remainingFiles = uploadedFiles.filter(f => !eduKeys.includes(f.fileType))
+      setUploadedFiles(remainingFiles)
+      saveDraft(name, phone, newEdu, joinDate, remainingFiles)
+    }
   }
 
   // 选择并上传文件
@@ -274,7 +279,29 @@ const IndexPage = () => {
     try {
       let files: any[]
 
-      if (config.accept === 'image') {
+      if (config.accept === 'mixed') {
+        // 混合模式：弹出选择菜单，让用户选"拍照/相册"或"选择PDF文件"
+        const { tapIndex } = await Taro.showActionSheet({
+          itemList: ['拍照或从相册选择', '选择PDF文件'],
+        })
+        if (tapIndex === 0) {
+          // 拍照/相册
+          const res = await Taro.chooseImage({
+            count: config.maxCount - currentCount,
+            sizeType: ['compressed'],
+            sourceType: ['album', 'camera'],
+          })
+          files = res.tempFiles
+        } else {
+          // 选择PDF文件
+          const res = await Taro.chooseMessageFile({
+            count: config.maxCount - currentCount,
+            type: 'file',
+            extension: ['pdf'],
+          })
+          files = res.tempFiles
+        }
+      } else if (config.accept === 'image') {
         const res = await Taro.chooseImage({
           count: config.maxCount - currentCount,
           sizeType: ['compressed'],
@@ -282,6 +309,7 @@ const IndexPage = () => {
         })
         files = res.tempFiles
       } else {
+        // accept === 'file'：选择文件
         const res = await Taro.chooseMessageFile({
           count: config.maxCount - currentCount,
           type: 'file',
@@ -328,7 +356,8 @@ const IndexPage = () => {
             if (verification && !verification.verified) {
               console.log('证件校验未通过:', verification.reason)
               // 弹出选择弹窗：重新上传 或 仍然提交
-              setVerifyFailInfo({ reason: verification.reason || '上传的图片不符合要求', fileType, fileData: data.data })
+              // 同时保存本地临时路径供预览
+              setVerifyFailInfo({ reason: verification.reason || '上传的图片不符合要求', fileType, fileData: { ...data.data, localPath: file.path } })
               setShowVerifyFailModal(true)
             } else {
               const newFiles = [...uploadedFiles, {
@@ -396,7 +425,7 @@ const IndexPage = () => {
       const newFiles = [...uploadedFiles, {
         fileType: verifyFailInfo.fileType,
         fileName: data.fileName,
-        filePath: '',  // 无预览路径，但文件已在服务端
+        filePath: data.localPath || '',  // 使用本地临时路径预览
         fileSize: data.fileSize,
         fileKey: data.fileKey,
         fileMimetype: data.fileMimetype,
