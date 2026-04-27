@@ -18,6 +18,7 @@ interface FileInfo {
   fileSize: number
   fileKey: string
   fileMimetype: string
+  uploadToken: string
   verificationOverride?: boolean
 }
 
@@ -367,6 +368,7 @@ const IndexPage = () => {
                 fileSize: data.data.fileSize,
                 fileKey,
                 fileMimetype: data.data.fileMimetype,
+                uploadToken: data.data.uploadToken,  // 提交时需要此 token 验证文件归属
                 verificationOverride: skipVerify ? true : undefined,
               }]
               setUploadedFiles(newFiles)
@@ -429,6 +431,7 @@ const IndexPage = () => {
         fileSize: data.fileSize,
         fileKey: data.fileKey,
         fileMimetype: data.fileMimetype,
+        uploadToken: data.uploadToken,  // 提交时需要此 token
         verificationOverride: true,
       }]
       setUploadedFiles(newFiles)
@@ -442,10 +445,14 @@ const IndexPage = () => {
   // 处理校验未通过 - 重新上传
   const handleVerifyReject = () => {
     // 删除服务端保留的校验失败文件
-    if (verifyFailInfo?.fileData?.fileKey) {
+    if (verifyFailInfo?.fileData?.fileKey && verifyFailInfo?.fileData?.uploadToken) {
       Network.request({
-        url: `/api/hr/files/cleanup?key=${encodeURIComponent(verifyFailInfo.fileData.fileKey)}`,
+        url: '/api/hr/files/cleanup',
         method: 'POST',
+        data: {
+          key: verifyFailInfo.fileData.fileKey,
+          uploadToken: verifyFailInfo.fileData.uploadToken,
+        },
       }).catch(() => {})  // 静默处理，不影响用户体验
     }
     setShowVerifyFailModal(false)
@@ -497,6 +504,7 @@ const IndexPage = () => {
             fileName: f.fileName,
             fileSize: f.fileSize,
             fileMimetype: f.fileMimetype,
+            uploadToken: f.uploadToken,
             verificationOverride: f.verificationOverride || false,
           })),
         },

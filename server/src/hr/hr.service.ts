@@ -1,3 +1,4 @@
+import * as crypto from 'crypto'
 import { Injectable } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { getSupabaseClient } from '../storage/database/supabase-client'
@@ -102,9 +103,9 @@ export class HrService {
   private supabase = getSupabaseClient()
   private llmClient: LLMClient
 
-  // 上传会话跟踪：记录上传的 fileKey 与 IP 的绑定关系，防止跨会话伪造
-  // key = fileKey, value = { clientIp, uploadedAt }
-  private uploadSessions: Map<string, { clientIp: string; uploadedAt: number }> = new Map()
+  // 上传会话跟踪：记录 fileKey 与 uploadToken 的绑定关系，防止跨会话伪造
+  // key = fileKey, value = { uploadToken, uploadedAt }
+  private uploadSessions: Map<string, { uploadToken: string; uploadedAt: number }> = new Map()
 
   constructor(
     private readonly storageService: StorageService,
@@ -125,26 +126,27 @@ export class HrService {
   }
 
   /**
-   * 注册上传会话：记录 fileKey 与上传者 IP 的绑定
+   * 注册上传会话：生成随机 token 与 fileKey 绑定
+   * 返回 uploadToken，提交时需要携带此 token
    */
-  registerUploadSession(fileKey: string, clientIp: string): void {
-    this.uploadSessions.set(fileKey, { clientIp, uploadedAt: Date.now() })
+  registerUploadSession(fileKey: string): string {
+    const uploadToken = crypto.randomBytes(16).toString('hex')
+    this.uploadSessions.set(fileKey, { uploadToken, uploadedAt: Date.now() })
+    return uploadToken
   }
 
   /**
-   * 验证 fileKey 是否属于指定 IP 的上传会话（非破坏性，允许多次验证以支持提交重试）
+   * 验证 fileKey 与 uploadToken 的绑定关系（非破坏性，允许提交失败后重试）
    */
-  validateUploadSession(fileKey: string, clientIp: string): boolean {
+  validateUploadSession(fileKey: string, uploadToken: string): boolean {
     const session = this.uploadSessions.get(fileKey)
     if (!session) return false
-    // IP 比较：兼容 IPv4 映射的 IPv6 地址（::ffff:127.0.0.1 == 127.0.0.1）
-    const normalizeIp = (ip: string) => ip.replace(/^::ffff:/, '')
-    if (normalizeIp(session.clientIp) !== normalizeIp(clientIp)) return false
+    if (session.uploadToken !== uploadToken) return false
     return true
   }
 
   /**
-   * 删除上传会话记录（清理文件时调用）
+   * 删除上传会话记录
    */
   removeUploadSession(fileKey: string): void {
     this.uploadSessions.delete(fileKey)

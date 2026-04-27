@@ -120,8 +120,8 @@ export class HrController {
 
     console.log('文件上传成功:', { key: maskSensitive(key) })
 
-    // 注册上传会话：绑定 fileKey 与上传者 IP
-    this.hrService.registerUploadSession(key, clientIp)
+    // 注册上传会话：生成 uploadToken 与 fileKey 绑定
+    const uploadToken = this.hrService.registerUploadSession(key)
 
     // AI 校验（skipVerify=1 时跳过，用于"仍然提交"申诉重新上传）
     let verification: any = null
@@ -145,6 +145,7 @@ export class HrController {
             fileSize: file.size,
             url: '',
             fileMimetype: file.mimetype,
+            uploadToken,
             verification,
           },
         }
@@ -155,11 +156,12 @@ export class HrController {
       code: 200,
       msg: '上传成功',
       data: {
-        fileKey: key,  // 返回真实 key，但提交时会验证 IP 绑定
+        fileKey: key,
         fileName: file.originalname,
         fileSize: file.size,
         url: '',  // 不返回公开 URL，防止直接访问
         fileMimetype: file.mimetype,
+        uploadToken,
         verification,
       },
     }
@@ -170,13 +172,12 @@ export class HrController {
    */
   @Post('files/cleanup')
   @HttpCode(200)
-  async cleanupFile(@Body() body: { key: string }, @Req() req: any) {
-    const clientIp = this.getClientIp(req)
-    if (!body.key) {
-      throw new BadRequestException('文件key不能为空')
+  async cleanupFile(@Body() body: { key: string; uploadToken: string }) {
+    if (!body.key || !body.uploadToken) {
+      throw new BadRequestException('文件key和授权凭证不能为空')
     }
-    // 验证该文件属于当前IP的上传会话
-    const isValid = this.hrService.validateUploadSession(body.key, clientIp)
+    // 验证该文件的 uploadToken
+    const isValid = this.hrService.validateUploadSession(body.key, body.uploadToken)
     if (!isValid) {
       throw new BadRequestException('无权删除该文件')
     }
@@ -187,7 +188,7 @@ export class HrController {
       return { code: 200, msg: '文件已清理' }
     } catch (error) {
       console.error('清理文件失败:', error)
-      return { code: 200, msg: '清理完成' }  // 文件可能已不存在，静默处理
+      return { code: 200, msg: '清理完成' }
     }
   }
 
@@ -208,6 +209,7 @@ export class HrController {
         fileName: string
         fileSize: number
         fileMimetype?: string
+        uploadToken: string
         verificationOverride?: boolean
       }>
     },
@@ -238,13 +240,16 @@ export class HrController {
       throw new BadRequestException('请上传所需资料')
     }
 
-    // 验证所有 fileKey 都属于当前 IP 的上传会话（防止伪造 fileKey 窃取他人文件）
+    // 验证所有 fileKey 与 uploadToken 的绑定关系（防止伪造 fileKey 窃取他人文件）
     for (const file of body.files) {
       if (!file.fileKey) {
         throw new BadRequestException('文件key不能为空')
       }
-      if (!this.hrService.validateUploadSession(file.fileKey, clientIp)) {
-        console.error('文件key验证失败，疑似伪造:', maskSensitive(file.fileKey), 'IP:', clientIp)
+      if (!file.uploadToken) {
+        throw new BadRequestException('文件授权凭证不能为空')
+      }
+      if (!this.hrService.validateUploadSession(file.fileKey, file.uploadToken)) {
+        console.error('文件授权验证失败，疑似伪造:', maskSensitive(file.fileKey))
         throw new BadRequestException('文件信息无效，请重新上传')
       }
     }
