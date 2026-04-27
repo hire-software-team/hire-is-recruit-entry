@@ -110,7 +110,7 @@ const HrAdminPage = () => {
         method: 'POST',
         data: { username, password },
       })
-      console.log('登录响应:', res.data)
+      console.log('登录成功')
 
       if (res.data.code === 200) {
         setToken(res.data.data.token)
@@ -149,7 +149,7 @@ const HrAdminPage = () => {
         data: { currentPassword: currentPwd, newPassword: newPwd },
         header: { Authorization: `Bearer ${token}` },
       })
-      console.log('修改密码响应:', res.data)
+      console.log('修改密码成功')
       if (res.data.code === 200) {
         Taro.showToast({ title: '密码修改成功', icon: 'success' })
         setShowChangePwd(false)
@@ -174,7 +174,7 @@ const HrAdminPage = () => {
         method: 'POST',
         header: { Authorization: `Bearer ${token}` },
       })
-      console.log('删除员工响应:', res.data)
+      console.log('删除员工成功')
       if (res.data.code === 200) {
         Taro.showToast({ title: '删除成功', icon: 'success' })
         setShowDeleteConfirm(false)
@@ -202,7 +202,7 @@ const HrAdminPage = () => {
           Authorization: `Bearer ${authToken || token}`,
         },
       })
-      console.log('员工列表响应:', res.data)
+      console.log('员工列表加载成功')
 
       if (res.data.code === 200) {
         setEmployees(res.data.data.employees || [])
@@ -228,7 +228,7 @@ const HrAdminPage = () => {
           Authorization: `Bearer ${token}`,
         },
       })
-      console.log('员工详情响应:', res.data)
+      console.log('员工详情加载成功')
 
       if (res.data.code === 200) {
         setDetail(res.data.data)
@@ -262,7 +262,7 @@ const HrAdminPage = () => {
                   Authorization: `Bearer ${token}`,
                 },
               })
-              console.log('下载结果:', downloadRes)
+              console.log('下载完成')
 
               if (downloadRes.statusCode === 200) {
                 const tempFilePath = downloadRes.tempFilePath

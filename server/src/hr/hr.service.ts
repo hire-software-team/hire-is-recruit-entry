@@ -102,12 +102,45 @@ export class HrService {
   private supabase = getSupabaseClient()
   private llmClient: LLMClient
 
+  // 上传会话跟踪：记录上传的 fileKey 与 IP 的绑定关系，防止跨会话伪造
+  // key = fileKey, value = { clientIp, uploadedAt }
+  private uploadSessions: Map<string, { clientIp: string; uploadedAt: number }> = new Map()
+
   constructor(
     private readonly storageService: StorageService,
     private readonly jwtService: JwtService,
   ) {
     const config = new Config()
     this.llmClient = new LLMClient(config)
+
+    // 每小时清理过期的上传会话记录（超过2小时的）
+    setInterval(() => {
+      const now = Date.now()
+      for (const [key, value] of this.uploadSessions) {
+        if (now - value.uploadedAt > 2 * 60 * 60 * 1000) {
+          this.uploadSessions.delete(key)
+        }
+      }
+    }, 60 * 60 * 1000)
+  }
+
+  /**
+   * 注册上传会话：记录 fileKey 与上传者 IP 的绑定
+   */
+  registerUploadSession(fileKey: string, clientIp: string): void {
+    this.uploadSessions.set(fileKey, { clientIp, uploadedAt: Date.now() })
+  }
+
+  /**
+   * 验证 fileKey 是否属于指定 IP 的上传会话
+   */
+  validateUploadSession(fileKey: string, clientIp: string): boolean {
+    const session = this.uploadSessions.get(fileKey)
+    if (!session) return false
+    if (session.clientIp !== clientIp) return false
+    // 验证后清除，防止重复使用
+    this.uploadSessions.delete(fileKey)
+    return true
   }
 
   /**
@@ -214,7 +247,9 @@ export class HrService {
       .select('*', { count: 'exact' })
 
     if (filters?.name) {
-      query = query.ilike('name', `%${filters.name}%`)
+      // 转义 ilike 特殊字符 % 和 _，防止 SQL 模式注入
+      const safeName = filters.name.replace(/%/g, '\\%').replace(/_/g, '\\_')
+      query = query.ilike('name', `%${safeName}%`)
     }
     if (filters?.phone) {
       query = query.eq('phone', filters.phone)

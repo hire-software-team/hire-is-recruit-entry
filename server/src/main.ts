@@ -23,6 +23,8 @@ async function bootstrap() {
     credentials: true,
   });
   app.setGlobalPrefix('api');
+  // 信任代理，确保 req.ip 能正确获取客户端 IP
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 

@@ -140,18 +140,17 @@ const IndexPage = () => {
   const DRAFT_KEY = 'hrDraft'
   const SUBMITTED_KEY = 'hrSubmittedData'
 
-  // 保存草稿到 localStorage
-  const saveDraft = (draftName: string, draftPhone: string, draftEducation: string, draftJoinDate: string, draftFiles: FileInfo[]) => {
+  // 保存草稿到 localStorage（仅保存表单数据，不保存文件信息）
+  // 文件上传后会话有时效性，重新打开需重新上传
+  const saveDraft = (draftName: string, draftPhone: string, draftEducation: string, draftJoinDate: string, _draftFiles?: FileInfo[]) => {
     try {
       Taro.setStorageSync(DRAFT_KEY, JSON.stringify({
         name: draftName,
         phone: draftPhone,
         education: draftEducation,
         joinDate: draftJoinDate,
-        files: draftFiles,
         updatedAt: Date.now(),
       }))
-      console.log('草稿已保存, 文件数:', draftFiles.length)
     } catch (e) {
       console.error('保存草稿失败:', e)
     }
@@ -201,15 +200,8 @@ const IndexPage = () => {
           setPhone(emp.phone || '')
           setEducation(emp.education || '')
           setJoinDate(emp.join_date || emp.joinDate || '')
-          const files: FileInfo[] = (submitted.files || []).map(f => ({
-            fileType: f.fileType || f.file_type,
-            fileName: f.fileName || f.file_name,
-            filePath: f.filePath || f.url,
-            fileSize: f.fileSize || f.file_size,
-            fileKey: f.fileKey || f.file_key,
-            fileMimetype: f.fileMimetype || f.file_type_ext || '',
-          }))
-          setUploadedFiles(files)
+          // 已提交的资料不恢复文件列表（文件信息无本地预览路径）
+          setUploadedFiles([])
           setIsLoadingData(false)
           return
         }
@@ -223,19 +215,17 @@ const IndexPage = () => {
     setIsLoadingData(false)
   }, [])
 
-  // 从 localStorage 恢复草稿
+  // 从 localStorage 恢复草稿（仅恢复表单数据，文件需重新上传）
   const loadDraft = () => {    try {
       const draftStr = Taro.getStorageSync(DRAFT_KEY)
       if (!draftStr) return
       const draft = JSON.parse(draftStr)
-      if (draft && draft.files && draft.files.length > 0) {
-        console.log('恢复草稿, 文件数:', draft.files.length, '保存时间:', new Date(draft.updatedAt).toLocaleString())
+      if (draft && draft.name) {
         setName(draft.name || '')
         setPhone(draft.phone || '')
         setEducation(draft.education || '')
         setJoinDate(draft.joinDate || '')
-        setUploadedFiles(draft.files)
-        Taro.showToast({ title: '已恢复上次编辑进度', icon: 'none', duration: 2000 })
+        Taro.showToast({ title: '已恢复表单信息，请重新上传文件', icon: 'none', duration: 3000 })
       }
     } catch (e) {
       console.error('恢复草稿失败:', e)
@@ -309,7 +299,7 @@ const IndexPage = () => {
             continue
           }
 
-          console.log('上传文件:', file.name, '大小:', file.size, '路径:', file.path, '类型:', fileType)
+          console.log('上传文件:', file.name, '大小:', file.size, '类型:', fileType)
 
           // 判断是否需要AI校验（图片类型都需要，除非 skipVerify=true）
           const needsVerify = !skipVerify && config.accept === 'image' && !SKIP_VERIFY_TYPES.includes(fileType)
@@ -325,7 +315,7 @@ const IndexPage = () => {
             name: 'file',
           })
           const data = JSON.parse(uploadRes.data as string)
-          console.log('上传响应:', data)
+          console.log('上传响应: code=', data.code)
 
           // 隐藏校验中的toast
           Taro.hideToast()
@@ -344,7 +334,7 @@ const IndexPage = () => {
               const newFiles = [...uploadedFiles, {
                 fileType,
                 fileName: data.data.fileName,
-                filePath: data.data.url,
+                filePath: file.path,  // 使用本地临时文件路径预览，不依赖服务端URL
                 fileSize: data.data.fileSize,
                 fileKey,
                 fileMimetype: data.data.fileMimetype,
@@ -464,7 +454,7 @@ const IndexPage = () => {
           })),
         },
       })
-      console.log('提交响应:', res)
+      console.log('提交响应: code=', res.data?.code)
       if (res.data.code === 200) {
         clearDraft()
         const submittedEmployee = { name, phone, education, join_date: joinDate, status: 'submitted' }

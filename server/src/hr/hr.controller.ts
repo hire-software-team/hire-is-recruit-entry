@@ -11,6 +11,7 @@ import * as archiver from 'archiver'
 // 限流器实例
 const uploadLimiter = new RateLimiter()
 const submitLimiter = new RateLimiter()
+const loginLimiter = new RateLimiter()
 
 // 根据文件扩展名推断 MIME 类型
 function guessMimeType(fileName: string): string {
@@ -45,12 +46,23 @@ export class HrController {
     private readonly cleanupService: HrCleanupService,
   ) {}
 
+  /** 从请求中提取客户端 IP */
+  private getClientIp(req: any): string {
+    return req.ip || req.connection?.remoteAddress || req.headers?.['x-forwarded-for'] || 'unknown'
+  }
+
   /**
    * 管理员登录
    */
   @Post('auth/login')
   @HttpCode(200)
-  async login(@Body() body: { username: string; password: string }) {
+  async login(@Body() body: { username: string; password: string }, @Req() req: any) {
+    // 登录限流：每IP每5分钟最多5次失败尝试
+    const clientIp = this.getClientIp(req)
+    if (loginLimiter.isRateLimited(clientIp, 5, 5 * 60 * 1000)) {
+      throw new BadRequestException('登录尝试过于频繁，请5分钟后再试')
+    }
+
     console.log('管理员登录请求:', maskSensitive(body.username))
 
     if (!body.username || !body.password) {
@@ -84,7 +96,7 @@ export class HrController {
     @Req() req: any,
   ) {
     // IP 限流：每分钟最多 10 次
-    const clientIp = req.ip || req.connection?.remoteAddress || 'unknown'
+    const clientIp = this.getClientIp(req)
     if (uploadLimiter.isRateLimited(clientIp, 10, 60 * 1000)) {
       throw new BadRequestException('上传过于频繁，请稍后再试')
     }
@@ -106,20 +118,24 @@ export class HrController {
       file.mimetype,
     )
 
-    console.log('文件上传成功:', { key, url })
+    console.log('文件上传成功:', { key: maskSensitive(key) })
+
+    // 注册上传会话：绑定 fileKey 与上传者 IP
+    this.hrService.registerUploadSession(key, clientIp)
 
     // AI 校验（skipVerify=1 时跳过，用于"仍然提交"申诉重新上传）
     let verification: any = null
     const shouldVerify = !skipVerify && file.mimetype.startsWith('image/') && !['medical_report'].includes(fileType)
     if (shouldVerify) {
       // 使用签名 URL 进行校验
-      const signedUrl = await this.storageService.getSignedUrl(key, 1800)
+      const signedUrl = await this.storageService.getSignedUrl(key, 300)
       verification = await this.hrService.verifyDocumentImage(signedUrl, fileType, education)
 
       if (verification && !verification.verified) {
-        // 校验未通过，删除已上传的文件（用户选择"仍然提交"时需重新上传）
+        // 校验未通过，删除已上传的文件并清除会话
         await this.storageService.deleteFile(key)
-        console.log('校验未通过，已删除文件:', key)
+        this.hrService.registerUploadSession(key, '')  // 清除会话
+        console.log('校验未通过，已删除文件:', maskSensitive(key))
 
         return {
           code: 200,
@@ -140,10 +156,10 @@ export class HrController {
       code: 200,
       msg: '上传成功',
       data: {
-        fileKey: key,
+        fileKey: key,  // 返回真实 key，但提交时会验证 IP 绑定
         fileName: file.originalname,
         fileSize: file.size,
-        url,
+        url: '',  // 不返回公开 URL，防止直接访问
         fileMimetype: file.mimetype,
         verification,
       },
@@ -173,7 +189,7 @@ export class HrController {
     @Req() req: any,
   ) {
     // IP 限流：每分钟最多 5 次
-    const clientIp = req.ip || req.connection?.remoteAddress || 'unknown'
+    const clientIp = this.getClientIp(req)
     if (submitLimiter.isRateLimited(clientIp, 5, 60 * 1000)) {
       throw new BadRequestException('提交过于频繁，请稍后再试')
     }
@@ -195,6 +211,17 @@ export class HrController {
 
     if (!body.files || body.files.length === 0) {
       throw new BadRequestException('请上传所需资料')
+    }
+
+    // 验证所有 fileKey 都属于当前 IP 的上传会话（防止伪造 fileKey 窃取他人文件）
+    for (const file of body.files) {
+      if (!file.fileKey) {
+        throw new BadRequestException('文件key不能为空')
+      }
+      if (!this.hrService.validateUploadSession(file.fileKey, clientIp)) {
+        console.error('文件key验证失败，疑似伪造:', maskSensitive(file.fileKey), 'IP:', clientIp)
+        throw new BadRequestException('文件信息无效，请重新上传')
+      }
     }
 
     // 检查手机号是否已提交
@@ -268,10 +295,10 @@ export class HrController {
       throw new NotFoundException('员工不存在')
     }
 
-    // 为文件生成签名 URL
+    // 为文件生成签名 URL（有效期缩短为5分钟，降低泄露风险）
     const filesWithSignedUrl = await Promise.all(
       result.files.map(async (file) => {
-        const signedUrl = await this.storageService.getSignedUrl(file.file_key, 1800)
+        const signedUrl = await this.storageService.getSignedUrl(file.file_key, 300)
         return { ...file, signed_url: signedUrl }
       })
     )
