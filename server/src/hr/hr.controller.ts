@@ -132,16 +132,15 @@ export class HrController {
       verification = await this.hrService.verifyDocumentImage(signedUrl, fileType, education)
 
       if (verification && !verification.verified) {
-        // 校验未通过，删除已上传的文件并清除会话
-        await this.storageService.deleteFile(key)
-        this.hrService.registerUploadSession(key, '')  // 清除会话
-        console.log('校验未通过，已删除文件:', maskSensitive(key))
+        // 校验未通过，保留文件（用户可选择"仍然提交"申诉覆盖）
+        // 孤儿文件由定时清理服务处理
+        console.log('校验未通过，保留文件供申诉:', maskSensitive(key))
 
         return {
           code: 200,
           msg: '校验未通过',
           data: {
-            fileKey: '',  // 文件已删除，无有效 key
+            fileKey: key,
             fileName: file.originalname,
             fileSize: file.size,
             url: '',
@@ -163,6 +162,30 @@ export class HrController {
         fileMimetype: file.mimetype,
         verification,
       },
+    }
+  }
+
+  /**
+   * 清理校验失败后未使用的文件（用户选择"重新上传"时调用）
+   */
+  @Post('files/cleanup')
+  @HttpCode(200)
+  async cleanupFile(@Body() body: { key: string }, @Req() req: any) {
+    const clientIp = this.getClientIp(req)
+    if (!body.key) {
+      throw new BadRequestException('文件key不能为空')
+    }
+    // 验证该文件属于当前IP的上传会话
+    const isValid = this.hrService.validateUploadSession(body.key, clientIp)
+    if (!isValid) {
+      throw new BadRequestException('无权删除该文件')
+    }
+    try {
+      await this.storageService.deleteFile(body.key)
+      return { code: 200, msg: '文件已清理' }
+    } catch (error) {
+      console.error('清理文件失败:', error)
+      return { code: 200, msg: '清理完成' }  // 文件可能已不存在，静默处理
     }
   }
 

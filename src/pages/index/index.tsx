@@ -389,11 +389,22 @@ const IndexPage = () => {
   }
 
   // 处理校验未通过 - 仍然提交（申诉覆盖）
-  // 需要重新上传文件（因为后端在校验失败时已删除文件）
+  // 后端校验失败时保留了文件，直接用返回的 fileData 标记 override 加入列表
   const handleVerifyOverride = () => {
-    // 关闭弹窗，触发重新上传（不带AI校验）
-    if (verifyFailInfo) {
-      handleChooseFile(verifyFailInfo.fileType, true)  // skipVerify=true 跳过校验重新上传
+    if (verifyFailInfo && verifyFailInfo.fileData) {
+      const data = verifyFailInfo.fileData
+      const newFiles = [...uploadedFiles, {
+        fileType: verifyFailInfo.fileType,
+        fileName: data.fileName,
+        filePath: '',  // 无预览路径，但文件已在服务端
+        fileSize: data.fileSize,
+        fileKey: data.fileKey,
+        fileMimetype: data.fileMimetype,
+        verificationOverride: true,
+      }]
+      setUploadedFiles(newFiles)
+      saveDraft(name, phone, education, joinDate, newFiles)
+      Taro.showToast({ title: '已添加（待HR确认）', icon: 'none' })
     }
     setShowVerifyFailModal(false)
     setVerifyFailInfo(null)
@@ -401,6 +412,13 @@ const IndexPage = () => {
 
   // 处理校验未通过 - 重新上传
   const handleVerifyReject = () => {
+    // 删除服务端保留的校验失败文件
+    if (verifyFailInfo?.fileData?.fileKey) {
+      Network.request({
+        url: `/api/hr/files/cleanup?key=${encodeURIComponent(verifyFailInfo.fileData.fileKey)}`,
+        method: 'POST',
+      }).catch(() => {})  // 静默处理，不影响用户体验
+    }
     setShowVerifyFailModal(false)
     setVerifyFailInfo(null)
   }
