@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { View, Text, Picker, Image, Canvas } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
@@ -467,6 +467,7 @@ const IndexPage = () => {
 
   // ===== 签字确认功能 =====
   const SIGNATURE_CANVAS_ID = 'signatureCanvas'
+  const canvasNodeRef = useRef<any>(null)
 
   const handleOpenSignDialog = () => {
     if (!agreed) {
@@ -482,6 +483,7 @@ const IndexPage = () => {
           if (res && res[0]) {
             const canvas = res[0].node
             if (canvas) {
+              canvasNodeRef.current = canvas
               const ctx = canvas.getContext('2d')
               const dpr = Taro.getSystemInfoSync().pixelRatio
               canvas.width = res[0].width * dpr
@@ -533,30 +535,33 @@ const IndexPage = () => {
 
   const handleClearSign = () => {
     try {
-      const query = Taro.createSelectorQuery()
-      query.select(`#${SIGNATURE_CANVAS_ID}`).fields({ node: true, size: true }).exec((res) => {
-        if (res && res[0] && res[0].node) {
-          const canvas = res[0].node
-          const ctx = canvas.getContext('2d')
-          const dpr = Taro.getSystemInfoSync().pixelRatio
-          ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
-        }
-      })
+      const canvas = canvasNodeRef.current
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        const dpr = Taro.getSystemInfoSync().pixelRatio
+        ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
+      }
     } catch (_) {}
   }
 
   const handleConfirmSign = async () => {
     try {
       setIsSigning(true)
-      // 将 Canvas 导出为临时图片
+      // 将 Canvas 导出为临时图片（Canvas 2D 模式需传入 canvas 节点）
       const tempFilePath = await new Promise<string>((resolve, reject) => {
-        Taro.canvasToTempFilePath({
-          canvasId: SIGNATURE_CANVAS_ID,
+        const options: any = {
           fileType: 'png',
           quality: 1,
-          success: (res) => resolve(res.tempFilePath),
-          fail: (err) => reject(err),
-        })
+          success: (res: any) => resolve(res.tempFilePath),
+          fail: (err: any) => reject(err),
+        }
+        // Canvas 2D 模式优先使用 canvas 节点
+        if (canvasNodeRef.current) {
+          options.canvas = canvasNodeRef.current
+        } else {
+          options.canvasId = SIGNATURE_CANVAS_ID
+        }
+        Taro.canvasToTempFilePath(options as any)
       })
 
       // 上传签字图片
