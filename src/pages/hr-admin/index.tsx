@@ -53,6 +53,7 @@ const FILE_TYPE_LABELS: Record<string, string> = {
   resignation_proof: '离职证明',
   bank_card_front: '银行卡正面',
   bank_card_back: '银行卡反面',
+  signature: '签字确认',
   // 兼容旧命名
   degree_cert_1: '学位证书1',
   degree_cert_2: '学位证书2',
@@ -66,6 +67,7 @@ const FILE_TYPE_GROUPS = [
   { label: '体检报告', types: ['medical_report'] },
   { label: '离职证明', types: ['resignation_proof'] },
   { label: '银行卡', types: ['bank_card_front', 'bank_card_back'] },
+  { label: '签字确认', types: ['signature'] },
 ]
 
 // 判断文件类型是否为图片（兼容 MIME 类型和扩展名两种格式）
@@ -591,11 +593,7 @@ const HrAdminPage = () => {
                   {loading ? '登录中...' : '登录'}
                 </Button>
 
-                <View className="mt-4 p-3 bg-blue-50 rounded-lg">
-                  <Text className="block text-xs text-gray-600">
-                    默认账号：admin / admin123
-                  </Text>
-                </View>
+
               </View>
             </CardContent>
           </Card>

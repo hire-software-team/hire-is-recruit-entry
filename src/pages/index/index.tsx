@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { View, Text, Picker, Image } from '@tarojs/components'
+import { View, Text, Picker, Image, Canvas } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
 import { Button } from '@/components/ui/button'
@@ -40,7 +40,7 @@ const EDUCATION_OPTIONS = [
 ]
 
 // 不需要AI校验的文件类型
-const SKIP_VERIFY_TYPES = ['medical_report']
+const SKIP_VERIFY_TYPES = ['medical_report', 'signature']
 
 // 文件类型配置（身份证、体检报告、离职证明、银行卡）
 // 最大文件大小：10MB
@@ -136,6 +136,12 @@ const IndexPage = () => {
     files: any[]
   } | null>(null)
   const [isLoadingData, setIsLoadingData] = useState(true)
+
+  // 签字确认相关状态
+  const [agreed, setAgreed] = useState(false)
+  const [showSignDialog, setShowSignDialog] = useState(false)
+  const [signatureFile, setSignatureFile] = useState<FileInfo | null>(null)
+  const [isSigning, setIsSigning] = useState(false)
 
   // 草稿缓存 Key
   const DRAFT_KEY = 'hrDraft'
@@ -459,6 +465,138 @@ const IndexPage = () => {
     setVerifyFailInfo(null)
   }
 
+  // ===== 签字确认功能 =====
+  const SIGNATURE_CANVAS_ID = 'signatureCanvas'
+
+  const handleOpenSignDialog = () => {
+    if (!agreed) {
+      Taro.showToast({ title: '请先勾选同意声明', icon: 'none' })
+      return
+    }
+    setShowSignDialog(true)
+    // 延迟初始化画布，确保DOM已渲染
+    setTimeout(() => {
+      try {
+        const query = Taro.createSelectorQuery()
+        query.select(`#${SIGNATURE_CANVAS_ID}`).fields({ node: true, size: true }).exec((res) => {
+          if (res && res[0]) {
+            const canvas = res[0].node
+            if (canvas) {
+              const ctx = canvas.getContext('2d')
+              const dpr = Taro.getSystemInfoSync().pixelRatio
+              canvas.width = res[0].width * dpr
+              canvas.height = res[0].height * dpr
+              ctx.scale(dpr, dpr)
+              ctx.strokeStyle = '#000000'
+              ctx.lineWidth = 3
+              ctx.lineCap = 'round'
+              ctx.lineJoin = 'round'
+            }
+          }
+        })
+      } catch (e) {
+        // Canvas 初始化失败降级处理
+        console.log('Canvas初始化异常')
+      }
+    }, 300)
+  }
+
+  const handleCanvasTouchStart = (e: any) => {
+    try {
+      const query = Taro.createSelectorQuery()
+      query.select(`#${SIGNATURE_CANVAS_ID}`).fields({ node: true, size: true }).exec((res) => {
+        if (res && res[0] && res[0].node) {
+          const canvas = res[0].node
+          const ctx = canvas.getContext('2d')
+          const touch = e.touches[0]
+          ctx.beginPath()
+          ctx.moveTo(touch.x, touch.y)
+        }
+      })
+    } catch (_) {}
+  }
+
+  const handleCanvasTouchMove = (e: any) => {
+    try {
+      const query = Taro.createSelectorQuery()
+      query.select(`#${SIGNATURE_CANVAS_ID}`).fields({ node: true, size: true }).exec((res) => {
+        if (res && res[0] && res[0].node) {
+          const canvas = res[0].node
+          const ctx = canvas.getContext('2d')
+          const touch = e.touches[0]
+          ctx.lineTo(touch.x, touch.y)
+          ctx.stroke()
+        }
+      })
+    } catch (_) {}
+  }
+
+  const handleClearSign = () => {
+    try {
+      const query = Taro.createSelectorQuery()
+      query.select(`#${SIGNATURE_CANVAS_ID}`).fields({ node: true, size: true }).exec((res) => {
+        if (res && res[0] && res[0].node) {
+          const canvas = res[0].node
+          const ctx = canvas.getContext('2d')
+          const dpr = Taro.getSystemInfoSync().pixelRatio
+          ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
+        }
+      })
+    } catch (_) {}
+  }
+
+  const handleConfirmSign = async () => {
+    try {
+      setIsSigning(true)
+      // 将 Canvas 导出为临时图片
+      const tempFilePath = await new Promise<string>((resolve, reject) => {
+        Taro.canvasToTempFilePath({
+          canvasId: SIGNATURE_CANVAS_ID,
+          fileType: 'png',
+          quality: 1,
+          success: (res) => resolve(res.tempFilePath),
+          fail: (err) => reject(err),
+        })
+      })
+
+      // 上传签字图片
+      const uploadRes = await Network.uploadFile({
+        url: '/api/hr/files/upload?fileType=signature&education=bachelor&skipVerify=1',
+        filePath: tempFilePath,
+        name: 'file',
+      })
+
+      const data = uploadRes.data
+      const parsed = typeof data === 'string' ? JSON.parse(data) : data
+      if (parsed.code === 200) {
+        const sigFile: FileInfo = {
+          fileType: 'signature',
+          fileName: '签字确认.png',
+          filePath: tempFilePath,
+          fileSize: 0,
+          fileKey: parsed.data.fileKey,
+          fileMimetype: 'image/png',
+          uploadToken: parsed.data.uploadToken,
+        }
+        setSignatureFile(sigFile)
+        setShowSignDialog(false)
+        Taro.showToast({ title: '签字成功', icon: 'success' })
+      } else {
+        Taro.showToast({ title: parsed.msg || '签字上传失败', icon: 'none' })
+      }
+    } catch (err: any) {
+      Taro.showToast({ title: '签字保存失败，请重试', icon: 'none' })
+    } finally {
+      setIsSigning(false)
+    }
+  }
+
+  const handleResign = () => {
+    setSignatureFile(null)
+    // 延迟打开签字面板
+    setTimeout(() => handleOpenSignDialog(), 100)
+  }
+
   const handleSubmit = async () => {
     if (!name.trim()) { Taro.showToast({ title: '请输入姓名', icon: 'none' }); return }
     if (!phone.trim()) { Taro.showToast({ title: '请输入手机号', icon: 'none' }); return }
@@ -491,6 +629,16 @@ const IndexPage = () => {
       return
     }
 
+    // 校验签字确认
+    if (!agreed) {
+      Taro.showToast({ title: '请先勾选同意声明', icon: 'none' })
+      return
+    }
+    if (!signatureFile) {
+      Taro.showToast({ title: '请完成手写签字', icon: 'none' })
+      return
+    }
+
     try {
       setIsUploading(true)
       const res = await Network.request({
@@ -498,28 +646,48 @@ const IndexPage = () => {
         method: 'POST',
         data: {
           name, phone, education, join_date: joinDate,
-          files: uploadedFiles.map(f => ({
-            fileType: f.fileType,
-            fileKey: f.fileKey,
-            fileName: f.fileName,
-            fileSize: f.fileSize,
-            fileMimetype: f.fileMimetype,
-            uploadToken: f.uploadToken,
-            verificationOverride: f.verificationOverride || false,
-          })),
+          files: [
+            ...uploadedFiles.map(f => ({
+              fileType: f.fileType,
+              fileKey: f.fileKey,
+              fileName: f.fileName,
+              fileSize: f.fileSize,
+              fileMimetype: f.fileMimetype,
+              uploadToken: f.uploadToken,
+              verificationOverride: f.verificationOverride || false,
+            })),
+            {
+              fileType: signatureFile.fileType,
+              fileKey: signatureFile.fileKey,
+              fileName: signatureFile.fileName,
+              fileSize: signatureFile.fileSize,
+              fileMimetype: signatureFile.fileMimetype,
+              uploadToken: signatureFile.uploadToken,
+              verificationOverride: false,
+            },
+          ],
         },
       })
       console.log('提交响应: code=', res.data?.code)
       if (res.data.code === 200) {
         clearDraft()
         const submittedEmployee = { name, phone, education, join_date: joinDate, status: 'submitted' }
-        const submittedFiles = uploadedFiles.map(f => ({
-          file_type: f.fileType,
-          file_name: f.fileName,
-          url: f.filePath,
-          file_size: f.fileSize,
-          file_type_ext: f.fileMimetype,
-        }))
+        const submittedFiles = [
+          ...uploadedFiles.map(f => ({
+            file_type: f.fileType,
+            file_name: f.fileName,
+            url: f.filePath,
+            file_size: f.fileSize,
+            file_type_ext: f.fileMimetype,
+          })),
+          {
+            file_type: signatureFile.fileType,
+            file_name: signatureFile.fileName,
+            url: signatureFile.filePath,
+            file_size: signatureFile.fileSize,
+            file_type_ext: signatureFile.fileMimetype,
+          },
+        ]
         saveSubmittedData(submittedEmployee, uploadedFiles)
         setSubmittedData({
           employee: submittedEmployee,
@@ -938,8 +1106,42 @@ const IndexPage = () => {
         </CardContent>
       </Card>
 
+      {/* 签字确认 */}
+      <Card>
+        <CardContent className="p-4">
+          <Text className="block text-base font-medium text-gray-900 mb-3">签字确认</Text>
+
+          <View className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+            <Text className="block text-sm text-gray-800 leading-6">
+              本人郑重声明：以上材料全部属实，并愿意接受相关背景核查。若填报事项与事实不符，本人愿意承担由此引起的责任及后果（包括并不限于无条件解除劳动合同）。
+            </Text>
+          </View>
+
+          <View className="flex items-start mb-4" onClick={() => setAgreed(!agreed)}>
+            <View className={`flex-shrink-0 w-5 h-5 rounded border-2 mt-1 flex items-center justify-center ${agreed ? 'bg-blue-500 border-blue-500' : 'border-gray-300 bg-white'}`}>
+              {agreed && <Text className="text-white text-xs">✓</Text>}
+            </View>
+            <Text className="block text-sm text-gray-700 ml-2">本人已阅读并同意以上声明</Text>
+          </View>
+
+          {signatureFile ? (
+            <View className="border border-gray-200 rounded-lg p-3">
+              <Text className="block text-sm text-gray-500 mb-2">已签字：</Text>
+              <Image src={signatureFile.filePath} mode="widthFix" className="w-full" style={{ maxHeight: '120px' }} />
+              <View className="mt-2">
+                <Button size="sm" variant="outline" onClick={handleResign}>重新签字</Button>
+              </View>
+            </View>
+          ) : (
+            <Button className="w-full" onClick={handleOpenSignDialog} disabled={!agreed}>
+              手写签字
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
       {/* 提交按钮 */}
-      <Button className="w-full" onClick={handleSubmit} disabled={isUploading}>
+      <Button className="w-full" onClick={handleSubmit} disabled={isUploading || !agreed || !signatureFile}>
         {isUploading ? '提交中...' : '提交资料'}
       </Button>
 
@@ -957,6 +1159,39 @@ const IndexPage = () => {
                 仍然提交
               </Button>
               <Text className="block text-xs text-gray-400 text-center">选择&ldquo;仍然提交&rdquo;后，HR将会人工复核此文件</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 签字面板弹窗 */}
+      {showSignDialog && (
+        <View className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <View className="bg-white rounded-xl mx-4 p-4 w-full max-w-sm">
+            <Text className="block text-lg font-semibold text-gray-900 mb-3 text-center">手写签字</Text>
+            <View className="border-2 border-gray-200 rounded-lg overflow-hidden bg-white mb-4">
+              <Canvas
+                id={SIGNATURE_CANVAS_ID}
+                canvasId={SIGNATURE_CANVAS_ID}
+                type="2d"
+                style={{ width: '100%', height: '200px' }}
+                onTouchStart={handleCanvasTouchStart}
+                onTouchMove={handleCanvasTouchMove}
+              />
+            </View>
+            <Text className="block text-xs text-gray-400 text-center mb-4">请在上方区域手写签名</Text>
+            <View style={{ display: 'flex', flexDirection: 'row', gap: '12px' }}>
+              <View style={{ flex: 1 }}>
+                <Button variant="outline" onClick={handleClearSign} className="w-full">清除</Button>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button onClick={handleConfirmSign} disabled={isSigning} className="w-full">
+                  {isSigning ? '保存中...' : '确认签字'}
+                </Button>
+              </View>
+            </View>
+            <View className="mt-3">
+              <Button variant="ghost" onClick={() => setShowSignDialog(false)} className="w-full">取消</Button>
             </View>
           </View>
         </View>

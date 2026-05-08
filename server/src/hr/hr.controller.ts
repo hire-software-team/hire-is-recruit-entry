@@ -486,6 +486,7 @@ export class HrController {
       resignation_proof: '离职证明',
       bank_card_front: '银行卡正面',
       bank_card_back: '银行卡反面',
+      signature: '签字确认',
       // 学历学位证书
       diploma: '学历证书',
       degree: '学位证书',
