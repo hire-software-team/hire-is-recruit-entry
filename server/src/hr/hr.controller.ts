@@ -247,7 +247,7 @@ export class HrController {
     const existingFileKeys = new Set<string>()
     if (existing) {
       for (const f of existing.files) {
-        existingFileKeys.add(f.fileKey)
+        existingFileKeys.add(f.file_key)
       }
     }
 
@@ -270,7 +270,6 @@ export class HrController {
       }
     }
 
-    if (existing) {
     if (existing) {
       // 已锁定，不允许修改
       if (existing.employee.status === 'locked') {
