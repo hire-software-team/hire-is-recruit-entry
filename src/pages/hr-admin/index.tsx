@@ -41,6 +41,7 @@ const EDUCATION_LABELS: Record<string, string> = {
 }
 
 const FILE_TYPE_LABELS: Record<string, string> = {
+  photo: '个人照片',
   id_card_front: '身份证正面',
   id_card_back: '身份证背面',
   diploma: '学历证书',

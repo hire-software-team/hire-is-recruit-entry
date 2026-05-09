@@ -47,6 +47,7 @@ const SKIP_VERIFY_TYPES = ['medical_report', 'signature']
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 
 const FILE_TYPE_CONFIG: Record<string, { name: string; required: boolean; maxCount: number; accept: 'image' | 'file' | 'mixed' }> = {
+  photo: { name: '个人照片', required: true, maxCount: 1, accept: 'image' },
   id_card_front: { name: '身份证正面', required: true, maxCount: 1, accept: 'image' },
   id_card_back: { name: '身份证背面', required: true, maxCount: 1, accept: 'image' },
   medical_report: { name: '体检报告', required: true, maxCount: 5, accept: 'mixed' },
@@ -86,6 +87,7 @@ function getSlotLabel(slot: typeof EDU_CERT_SLOTS[0], education: string): string
 
 // 所有文件类型的标签映射（用于HR后台兼容）
 const FILE_TYPE_LABELS: Record<string, string> = {
+  photo: '个人照片',
   id_card_front: '身份证正面',
   id_card_back: '身份证背面',
   diploma: '学历证书',
@@ -1037,6 +1039,15 @@ const IndexPage = () => {
       <Card className="mb-4">
         <CardContent className="p-4">
           <Text className="block text-lg font-semibold text-gray-900 mb-4">资料上传</Text>
+
+          {/* 个人照片 */}
+          <View className="mb-6">
+            <Text className="block text-base font-medium text-gray-900 mb-1">个人照片（必传）</Text>
+            <Text className="block text-xs text-gray-500 mb-3">上半身免冠照片，面部特征清晰无遮挡</Text>
+            <View className="grid grid-cols-2 gap-3">
+              {renderSlot('photo', '个人照片')}
+            </View>
+          </View>
 
           {/* 身份证 */}
           <View className="mb-6">

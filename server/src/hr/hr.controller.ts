@@ -480,6 +480,7 @@ export class HrController {
    */
   private getFileTypeName(fileType: string): string {
     const typeMap: Record<string, string> = {
+      photo: '个人照片',
       id_card_front: '身份证正面',
       id_card_back: '身份证背面',
       medical_report: '体检报告',

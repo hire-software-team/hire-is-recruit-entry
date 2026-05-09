@@ -29,6 +29,10 @@ interface VerifyResult {
 // key = fileType，value = { label, description }
 // 其中 diploma 和 degree 需要根据 education 动态调整描述
 const DOCUMENT_TYPE_PROMPTS: Record<string, { label: string; description: string }> = {
+  photo: {
+    label: '个人照片',
+    description: '上半身免冠照片，面部特征清晰无遮挡，头部居中，背景干净，照片光线均匀，能清晰辨认面部五官特征，不可佩戴帽子墨镜等遮挡面部的饰品',
+  },
   id_card_front: {
     label: '身份证正面（人像面）',
     description: '中国居民身份证人像面，右侧有持证人照片，左侧包含姓名、性别、民族、出生日期、住址、公民身份号码等信息，正面没有国徽',
