@@ -203,6 +203,7 @@ export class HrController {
       phone: string
       education: string
       join_date: string
+      hr_contact: string
       files: Array<{
         fileType: string
         fileKey: string
@@ -281,6 +282,7 @@ export class HrController {
         phone: body.phone,
         education: body.education,
         join_date: body.join_date,
+        hr_contact: body.hr_contact,
       })
 
       // 替换文件记录
@@ -312,6 +314,7 @@ export class HrController {
       phone: body.phone,
       education: body.education,
       join_date: body.join_date,
+      hr_contact: body.hr_contact,
     })
 
     // 创建文件记录

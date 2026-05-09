@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye, GraduationCap, Settings, Trash2, TriangleAlert, Lock, LockOpen } from 'lucide-react-taro'
+import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye, GraduationCap, Settings, Trash2, TriangleAlert, Lock, LockOpen, Users } from 'lucide-react-taro'
 
 interface EmployeeDetail {
   employee: {
@@ -17,6 +17,7 @@ interface EmployeeDetail {
     phone: string
     education: string | null
     join_date: string | null
+    hr_contact: string | null
     status: string
     created_at: string
   }
@@ -451,6 +452,11 @@ const HrAdminPage = () => {
                       <Text className="block text-sm text-gray-900 font-medium">{detail.employee.join_date || '未填写'}</Text>
                     </View>
                     <View className="flex items-center gap-2">
+                      <Users size={16} color="#6b7280" />
+                      <Text className="block text-sm text-gray-500 w-16">对接HR</Text>
+                      <Text className="block text-sm text-gray-900 font-medium">{detail.employee.hr_contact || '未填写'}</Text>
+                    </View>
+                    <View className="flex items-center gap-2">
                       <Text className="block text-sm text-gray-500 w-16">状态</Text>
                       {getStatusBadge(detail.employee.status)}
                     </View>
@@ -754,6 +760,12 @@ const HrAdminPage = () => {
                           <View className="flex items-center gap-1">
                             <Calendar size={14} color="#9ca3af" />
                             <Text className="block text-sm text-gray-600">{employee.join_date}</Text>
+                          </View>
+                        )}
+                        {employee.hr_contact && (
+                          <View className="flex items-center gap-1">
+                            <Users size={14} color="#9ca3af" />
+                            <Text className="block text-sm text-gray-600">{employee.hr_contact}</Text>
                           </View>
                         )}
                       </View>

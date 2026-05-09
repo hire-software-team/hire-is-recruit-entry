@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Upload, Settings, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User, GraduationCap, LoaderCircle, Lock, PenLine } from 'lucide-react-taro'
+import { Upload, Settings, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User, Users, GraduationCap, LoaderCircle, Lock, PenLine } from 'lucide-react-taro'
 
 interface FileInfo {
   fileType: string
@@ -38,6 +38,9 @@ const EDUCATION_OPTIONS = [
   { value: 'master', label: '研究生' },
   { value: 'doctor', label: '博士生' },
 ]
+
+// 对接HR选项
+const HR_CONTACT_OPTIONS = ['魏经理', '孙经理']
 
 // 不需要AI校验的文件类型
 const SKIP_VERIFY_TYPES = ['medical_report', 'signature']
@@ -127,6 +130,7 @@ const IndexPage = () => {
   const [phone, setPhone] = useState('')
   const [education, setEducation] = useState('')
   const [joinDate, setJoinDate] = useState('')
+  const [hrContact, setHrContact] = useState('')
   const [uploadedFiles, setUploadedFiles] = useState<FileInfo[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [verifyingType, setVerifyingType] = useState<string | null>(null)
@@ -154,13 +158,14 @@ const IndexPage = () => {
 
   // 保存草稿到 localStorage（仅保存表单数据，不保存文件信息）
   // 文件上传后会话有时效性，重新打开需重新上传
-  const saveDraft = (draftName: string, draftPhone: string, draftEducation: string, draftJoinDate: string, _draftFiles?: FileInfo[]) => {
+  const saveDraft = (draftName: string, draftPhone: string, draftEducation: string, draftJoinDate: string, _draftFiles?: FileInfo[], draftHrContact?: string) => {
     try {
       Taro.setStorageSync(DRAFT_KEY, JSON.stringify({
         name: draftName,
         phone: draftPhone,
         education: draftEducation,
         joinDate: draftJoinDate,
+        hrContact: draftHrContact,
         updatedAt: Date.now(),
       }))
     } catch (e) {
@@ -213,6 +218,7 @@ const IndexPage = () => {
             setPhone(emp.phone || '')
             setEducation(emp.education || '')
             setJoinDate(emp.join_date || emp.joinDate || '')
+            setHrContact(emp.hr_contact || emp.hrContact || '')
             setUploadedFiles([])
 
             // 通过 API 检查锁定状态
@@ -253,6 +259,7 @@ const IndexPage = () => {
         setPhone(draft.phone || '')
         setEducation(draft.education || '')
         setJoinDate(draft.joinDate || '')
+        setHrContact(draft.hrContact || '')
         Taro.showToast({ title: '已恢复表单信息，请重新上传文件', icon: 'none', duration: 3000 })
       }
     } catch (e) {
@@ -277,13 +284,13 @@ const IndexPage = () => {
         return visibleSlotKeys.includes(f.fileType)  // 新学历范围内的文件保留
       })
       setUploadedFiles(remainingFiles)
-      saveDraft(name, phone, newEdu, joinDate, remainingFiles)
+      saveDraft(name, phone, newEdu, joinDate, remainingFiles, newEdu ? hrContact : undefined)
     } else {
       // 未选择学历，清除所有学历文件
       const eduKeys = EDU_CERT_SLOTS.map(s => s.key)
       const remainingFiles = uploadedFiles.filter(f => !eduKeys.includes(f.fileType))
       setUploadedFiles(remainingFiles)
-      saveDraft(name, phone, newEdu, joinDate, remainingFiles)
+      saveDraft(name, phone, newEdu, joinDate, remainingFiles, newEdu ? hrContact : undefined)
     }
   }
 
@@ -399,7 +406,7 @@ const IndexPage = () => {
                 verificationOverride: skipVerify ? true : undefined,
               }]
               setUploadedFiles(newFiles)
-              saveDraft(name, phone, education, joinDate, newFiles)
+              saveDraft(name, phone, education, joinDate, newFiles, hrContact)
 
               if (verification) {
                 setVerificationResults(prev => new Map(prev).set(fileKey, verification))
@@ -443,7 +450,7 @@ const IndexPage = () => {
       next.delete(fileKey)
       return next
     })
-    saveDraft(name, phone, education, joinDate, remainingFiles)
+    saveDraft(name, phone, education, joinDate, remainingFiles, hrContact)
   }
 
   // 处理校验未通过 - 仍然提交（申诉覆盖）
@@ -462,7 +469,7 @@ const IndexPage = () => {
         verificationOverride: true,
       }]
       setUploadedFiles(newFiles)
-      saveDraft(name, phone, education, joinDate, newFiles)
+      saveDraft(name, phone, education, joinDate, newFiles, hrContact)
       Taro.showToast({ title: '已添加（待HR确认）', icon: 'none' })
     }
     setShowVerifyFailModal(false)
@@ -629,6 +636,7 @@ const IndexPage = () => {
     if (!/^1[3-9]\d{9}$/.test(phone.trim())) { Taro.showToast({ title: '请输入正确的11位手机号', icon: 'none' }); return }
     if (!education) { Taro.showToast({ title: '请选择学历', icon: 'none' }); return }
     if (!joinDate) { Taro.showToast({ title: '请选择入职日期', icon: 'none' }); return }
+    if (!hrContact) { Taro.showToast({ title: '请选择对接HR', icon: 'none' }); return }
 
     // 校验身份证和离职证明
     const missingFiles: string[] = []
@@ -683,7 +691,7 @@ const IndexPage = () => {
         url: '/api/hr/employees',
         method: 'POST',
         data: {
-          name, phone, education, join_date: joinDate,
+          name, phone, education, join_date: joinDate, hr_contact: hrContact,
           files: [
             ...uploadedFiles.map(f => ({
               fileType: f.fileType,
@@ -709,7 +717,7 @@ const IndexPage = () => {
       console.log('提交响应: code=', res.data?.code)
       if (res.data.code === 200) {
         clearDraft()
-        const submittedEmployee = { name, phone, education, join_date: joinDate, status: 'submitted' }
+        const submittedEmployee = { name, phone, education, join_date: joinDate, hr_contact: hrContact, status: 'submitted' }
         const submittedFiles = [
           ...uploadedFiles.map(f => ({
             file_type: f.fileType,
@@ -1021,7 +1029,12 @@ const IndexPage = () => {
               <View className="flex items-center gap-2">
                 <Calendar size={16} color="#6b7280" />
                 <Text className="block text-sm text-gray-500 w-16">入职日期</Text>
-                <Text className="block text-sm text-gray-900 font-medium">{joinDate}</Text>
+                <Text className="block text-sm text-gray-900 font-medium">{joinDate || '未填写'}</Text>
+              </View>
+              <View className="flex items-center gap-2">
+                <Users size={16} color="#6b7280" />
+                <Text className="block text-sm text-gray-500 w-16">对接HR</Text>
+                <Text className="block text-sm text-gray-900 font-medium">{hrContact || '未填写'}</Text>
               </View>
             </View>
           </CardContent>
@@ -1140,6 +1153,15 @@ const IndexPage = () => {
             <Picker mode="date" onChange={onDateChange} value={joinDate || ''}>
               <View className="bg-gray-50 rounded-lg px-4 py-3 flex justify-between items-center">
                 <Text className={joinDate ? 'text-gray-900' : 'text-gray-400'}>{joinDate || '请选择入职日期'}</Text>
+              </View>
+            </Picker>
+          </View>
+
+          <View>
+            <Label className="mb-2"><Text className="block text-sm font-medium text-gray-700">对接HR *</Text></Label>
+            <Picker mode="selector" range={HR_CONTACT_OPTIONS} onChange={(e) => setHrContact(HR_CONTACT_OPTIONS[e.detail.value] || '')}>
+              <View className="bg-gray-50 rounded-lg px-4 py-3 flex justify-between items-center">
+                <Text className={hrContact ? 'text-gray-900' : 'text-gray-400'}>{hrContact || '请选择对接HR'}</Text>
               </View>
             </Picker>
           </View>
