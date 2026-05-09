@@ -202,7 +202,7 @@ export class HrController {
       name: string
       phone: string
       education: string
-      joinDate: string
+      join_date: string
       files: Array<{
         fileType: string
         fileKey: string
@@ -280,7 +280,7 @@ export class HrController {
         name: body.name,
         phone: body.phone,
         education: body.education,
-        join_date: body.joinDate,
+        join_date: body.join_date,
       })
 
       // 替换文件记录
@@ -311,7 +311,7 @@ export class HrController {
       name: body.name,
       phone: body.phone,
       education: body.education,
-      join_date: body.joinDate,
+      join_date: body.join_date,
     })
 
     // 创建文件记录
