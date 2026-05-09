@@ -228,13 +228,16 @@ export class HrService {
       .select('file_key')
       .eq('employee_id', employeeId)
 
-    // 2. 删除旧文件的 Storage 对象
+    // 2. 只删除不再使用的旧文件的 Storage 对象（保留仍在新列表中的文件）
+    const newFileKeys = new Set(newFiles.map(f => f.file_key))
     if (oldFiles && oldFiles.length > 0) {
       for (const file of oldFiles) {
-        try {
-          await this.storageService.deleteFile(file.file_key)
-        } catch (e) {
-          console.error('删除旧文件失败:', maskSensitive(file.file_key), e)
+        if (!newFileKeys.has(file.file_key)) {
+          try {
+            await this.storageService.deleteFile(file.file_key)
+          } catch (e) {
+            console.error('删除旧文件失败:', maskSensitive(file.file_key), e)
+          }
         }
       }
     }

@@ -936,16 +936,25 @@ const IndexPage = () => {
                   const filesRes = await Network.request({ url: `/api/hr/employees/own-files?phone=${savedPhone}` })
                   const serverFiles = filesRes.data?.data || filesRes.data
                   if (Array.isArray(serverFiles) && serverFiles.length > 0) {
-                    const restoredFiles: FileInfo[] = serverFiles.map((f: any) => ({
-                      fileType: f.fileType,
-                      fileKey: f.fileKey,
-                      fileName: f.fileName,
-                      fileSize: f.fileSize,
-                      filePath: f.signedUrl || '',
-                      fileMimetype: f.fileTypeExt || '',
-                      verificationOverride: f.verificationOverride || false,
-                      uploadToken: '',
-                    }))
+                    const restoredFiles: FileInfo[] = []
+                    for (const f of serverFiles) {
+                      const fileInfo: FileInfo = {
+                        fileType: f.fileType,
+                        fileKey: f.fileKey,
+                        fileName: f.fileName,
+                        fileSize: f.fileSize,
+                        filePath: f.signedUrl || '',
+                        fileMimetype: f.fileMimetype || f.fileTypeExt || '',
+                        verificationOverride: f.verificationOverride || false,
+                        uploadToken: f.uploadToken || '',
+                      }
+                      // signature 类型文件恢复到独立的 signatureFile state，不放入 uploadedFiles
+                      if (f.fileType === 'signature') {
+                        setSignatureFile(fileInfo)
+                      } else {
+                        restoredFiles.push(fileInfo)
+                      }
+                    }
                     setUploadedFiles(restoredFiles)
                   }
                 }
