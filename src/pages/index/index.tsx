@@ -624,7 +624,6 @@ const IndexPage = () => {
   }
 
   const handleSubmit = async () => {
-    if (isLocked) { Taro.showToast({ title: '资料已被锁定，无法修改', icon: 'none' }); return }
     if (!name.trim()) { Taro.showToast({ title: '请输入姓名', icon: 'none' }); return }
     if (!phone.trim()) { Taro.showToast({ title: '请输入手机号', icon: 'none' }); return }
     if (!/^1[3-9]\d{9}$/.test(phone.trim())) { Taro.showToast({ title: '请输入正确的11位手机号', icon: 'none' }); return }
@@ -668,6 +667,18 @@ const IndexPage = () => {
 
     try {
       setIsUploading(true)
+
+      // 提交前实时检查锁定状态（管理员可能在用户操作期间锁定）
+      try {
+        const statusRes = await Network.request({ url: `/api/hr/employees/status?phone=${encodeURIComponent(phone)}` })
+        const statusData = statusRes.data?.data || statusRes.data
+        if (statusData?.locked) {
+          setIsLocked(true)
+          Taro.showToast({ title: '资料已被锁定，无法修改', icon: 'none', duration: 3000 })
+          return
+        }
+      } catch (_) { /* 查询失败不阻塞提交，由后端兜底校验 */ }
+
       const res = await Network.request({
         url: '/api/hr/employees',
         method: 'POST',
@@ -727,7 +738,13 @@ const IndexPage = () => {
     } catch (error: any) {
       console.error('提交失败:', error)
       // 从 Taro 错误对象中提取后端返回的业务错误消息
-      const errMsg = error?.data?.message || error?.message || error?.errMsg || '提交失败'
+      // Taro.request 在 HTTP 非 2xx 时 reject，错误结构: { data: { message, error, statusCode }, statusCode, errMsg }
+      const errData = error?.data
+      const errMsg = (typeof errData === 'object' ? errData?.message : '') || error?.message || error?.errMsg || '提交失败'
+      // 如果后端返回 403（锁定），同步更新前端锁定状态
+      if (errData?.statusCode === 403 || error?.statusCode === 403) {
+        setIsLocked(true)
+      }
       Taro.showToast({ title: errMsg, icon: 'none', duration: 3000 })
     } finally {
       setIsUploading(false)
@@ -932,6 +949,13 @@ const IndexPage = () => {
                 const savedPhone = submittedData.employee.phone
                 const statusRes = await Network.request({ url: `/api/hr/employees/status?phone=${savedPhone}` })
                 const statusData = statusRes.data?.data || statusRes.data
+                // 检查是否已被锁定
+                if (statusData?.locked) {
+                  setIsLocked(true)
+                  Taro.hideLoading()
+                  Taro.showToast({ title: '资料已被锁定，无法修改', icon: 'none', duration: 3000 })
+                  return
+                }
                 if (statusData?.employeeId) {
                   const filesRes = await Network.request({ url: `/api/hr/employees/own-files?phone=${savedPhone}` })
                   const serverFiles = filesRes.data?.data || filesRes.data
