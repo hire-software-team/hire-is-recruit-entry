@@ -922,9 +922,40 @@ const IndexPage = () => {
         {/* 修改资料按钮 */}
         {!isLocked && (
           <View className="mb-4">
-            <Button className="w-full" onClick={() => {
-              setSubmittedData(null)
-              Taro.showToast({ title: '可修改资料后重新提交', icon: 'none' })
+            <Button className="w-full" onClick={async () => {
+              if (!submittedData?.employee?.phone) {
+                setSubmittedData(null)
+                return
+              }
+              try {
+                Taro.showLoading({ title: '加载中...' })
+                const savedPhone = submittedData.employee.phone
+                const statusRes = await Network.request({ url: `/api/hr/employees/status?phone=${savedPhone}` })
+                const statusData = statusRes.data?.data || statusRes.data
+                if (statusData?.employeeId) {
+                  const filesRes = await Network.request({ url: `/api/hr/employees/own-files?phone=${savedPhone}` })
+                  const serverFiles = filesRes.data?.data || filesRes.data
+                  if (Array.isArray(serverFiles) && serverFiles.length > 0) {
+                    const restoredFiles: FileInfo[] = serverFiles.map((f: any) => ({
+                      fileType: f.fileType,
+                      fileKey: f.fileKey,
+                      fileName: f.fileName,
+                      fileSize: f.fileSize,
+                      filePath: f.signedUrl || '',
+                      fileMimetype: f.fileTypeExt || '',
+                      verificationOverride: f.verificationOverride || false,
+                      uploadToken: '',
+                    }))
+                    setUploadedFiles(restoredFiles)
+                  }
+                }
+                setSubmittedData(null)
+                Taro.hideLoading()
+                Taro.showToast({ title: '可修改资料后重新提交', icon: 'none' })
+              } catch (err) {
+                Taro.hideLoading()
+                setSubmittedData(null)
+              }
             }}
             >
               <PenLine size={16} color="#ffffff" className="mr-2" />

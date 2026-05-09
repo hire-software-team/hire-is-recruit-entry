@@ -360,6 +360,25 @@ export class HrController {
   }
 
   /**
+   * 获取员工自己的文件列表（通过手机号，无需鉴权，用于修改资料时恢复）
+   */
+  @Get('employees/own-files')
+  async getEmployeeOwnFiles(@Query('phone') phone: string) {
+    if (!phone) {
+      throw new BadRequestException('请提供手机号')
+    }
+    const status = await this.hrService.getEmployeeStatus(phone)
+    if (!status.submitted) {
+      return { code: 200, data: [] }
+    }
+    if (status.locked) {
+      throw new ForbiddenException('资料已被锁定，无法查看')
+    }
+    const files = await this.hrService.getEmployeeOwnFiles(status.employeeId!)
+    return { code: 200, data: files }
+  }
+
+  /**
    * 获取员工详情（管理员，JWT 鉴权）
    */
   @Get('employees/:id')

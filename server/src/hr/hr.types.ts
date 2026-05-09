@@ -17,6 +17,8 @@ export interface EmployeeFile {
   file_name: string
   file_size: number
   file_type_ext: string
+  verification_override: boolean
   created_at: string
   url?: string
+  signed_url?: string
 }

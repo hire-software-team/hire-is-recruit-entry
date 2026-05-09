@@ -300,6 +300,45 @@ export class HrService {
   }
 
   /**
+   * 获取员工自己的文件列表（用于修改资料时恢复，带签名URL）
+   */
+  async getEmployeeOwnFiles(employeeId: number) {
+    const { data: files, error } = await this.supabase
+      .from('employee_files')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      console.error('获取员工文件失败:', error)
+      throw new Error(`获取员工文件失败: ${error.message}`)
+    }
+
+    const fileList = (files as EmployeeFile[]) || []
+    // 为每个文件生成签名URL
+    const filesWithUrl = await Promise.all(
+      fileList.map(async (f) => {
+        const signedUrl = await this.storageService.getSignedUrl(f.file_key, 300) // 5分钟有效
+        const uploadToken = this.registerUploadSession(f.file_key)
+        return {
+          id: f.id,
+          fileType: f.file_type,
+          fileKey: f.file_key,
+          fileName: f.file_name,
+          fileSize: f.file_size,
+          fileMimetype: f.file_type_ext,
+          fileTypeExt: f.file_type_ext,
+          verificationOverride: f.verification_override,
+          signedUrl,
+          uploadToken,
+        }
+      })
+    )
+
+    return filesWithUrl
+  }
+
+  /**
    * 创建员工文件记录
    */
   async createEmployeeFile(employeeId: number, fileData: {

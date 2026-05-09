@@ -63,6 +63,7 @@ const FILE_TYPE_LABELS: Record<string, string> = {
 }
 
 const FILE_TYPE_GROUPS = [
+  { label: '个人照片', types: ['photo'] },
   { label: '身份证', types: ['id_card_front', 'id_card_back'] },
   { label: '学历学位证书', types: ['diploma', 'degree', 'master_diploma', 'master_degree', 'doctor_diploma', 'doctor_degree', 'degree_cert_1', 'degree_cert_2', 'degree_cert_3', 'degree_cert_4'] },
   { label: '体检报告', types: ['medical_report'] },
