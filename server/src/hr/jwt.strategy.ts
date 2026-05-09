@@ -7,6 +7,7 @@ export interface JwtPayload {
   sub: number
   username: string
   role: string
+  hrContacts: string[]
 }
 
 @Injectable()
@@ -23,6 +24,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!payload.sub || !payload.username) {
       throw new UnauthorizedException('无效的Token')
     }
-    return { userId: payload.sub, username: payload.username, role: payload.role }
+    return {
+      userId: payload.sub,
+      username: payload.username,
+      role: payload.role || 'level1',
+      hrContacts: payload.hrContacts || [],
+    }
   }
 }

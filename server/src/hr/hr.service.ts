@@ -418,6 +418,7 @@ export class HrService {
     name?: string
     phone?: string
     status?: string
+    hrContacts?: string[] | null  // null=不过滤(全部), 数组=只返回范围内的
   }): Promise<{ employees: any[]; total: number }> {
     let query = this.supabase
       .from('employees')
@@ -433,6 +434,10 @@ export class HrService {
     }
     if (filters?.status) {
       query = query.eq('status', filters.status)
+    }
+    // hr_contacts 范围过滤：level2/3 只看范围内员工
+    if (filters?.hrContacts && filters.hrContacts.length > 0) {
+      query = query.in('hr_contact', filters.hrContacts)
     }
 
     query = query.order('created_at', { ascending: false })
@@ -497,10 +502,10 @@ export class HrService {
   /**
    * 验证管理员（bcrypt 比对）
    */
-  async validateAdmin(username: string, password: string): Promise<{ id: number; username: string } | null> {
+  async validateAdmin(username: string, password: string): Promise<{ id: number; username: string; role: string; hrContacts: string[] } | null> {
     const { data, error } = await this.supabase
-      .from('admin_users')
-      .select('id, username, password')
+      .from('hr_admins')
+      .select('id, username, password_hash, role, hr_contacts')
       .eq('username', username)
       .maybeSingle()
 
@@ -513,33 +518,17 @@ export class HrService {
       return null
     }
 
-    // 兼容：如果密码不是 bcrypt 格式（旧明文密码），先比对再自动迁移
-    const isBcryptHash = data.password.startsWith('$2a$') || data.password.startsWith('$2b$')
+    const isValid = await bcrypt.compare(password, data.password_hash)
+    if (!isValid) return null
 
-    if (isBcryptHash) {
-      const isValid = await bcrypt.compare(password, data.password)
-      return isValid ? { id: data.id, username: data.username } : null
-    } else {
-      // 旧明文密码比对
-      if (data.password !== password) return null
-
-      // 自动迁移为 bcrypt 哈希
-      const hashedPassword = await bcrypt.hash(password, 10)
-      await this.supabase
-        .from('admin_users')
-        .update({ password: hashedPassword })
-        .eq('id', data.id)
-      console.log(`管理员 ${maskSensitive(username)} 密码已迁移为bcrypt哈希`)
-
-      return { id: data.id, username: data.username }
-    }
+    return { id: data.id, username: data.username, role: data.role, hrContacts: data.hr_contacts || [] }
   }
 
   /**
    * 签发 JWT Token
    */
-  async generateToken(admin: { id: number; username: string }): Promise<string> {
-    const payload = { sub: admin.id, username: admin.username, role: 'admin' }
+  async generateToken(admin: { id: number; username: string; role: string; hrContacts: string[] }): Promise<string> {
+    const payload = { sub: admin.id, username: admin.username, role: admin.role, hrContacts: admin.hrContacts }
     return this.jwtService.sign(payload)
   }
 
@@ -780,8 +769,8 @@ export class HrService {
     // 哈希新密码并更新
     const hashedPassword = await bcrypt.hash(newPassword, 10)
     const { error: updateError } = await this.supabase
-      .from('admin_users')
-      .update({ password: hashedPassword })
+      .from('hr_admins')
+      .update({ password_hash: hashedPassword })
       .eq('id', userId)
 
     if (updateError) {
@@ -789,5 +778,172 @@ export class HrService {
     }
 
     console.log('管理员密码已修改:', maskSensitive(`userId=${userId}`))
+  }
+
+  // ==================== 管理员 CRUD ====================
+
+  /** 获取管理员列表（仅 level1 可调用） */
+  async getAdminList(): Promise<{ id: number; username: string; role: string; hrContacts: string[]; createdBy: number | null; createdAt: string }[]> {
+    const { data, error } = await this.supabase
+      .from('hr_admins')
+      .select('id, username, role, hr_contacts, created_by, created_at')
+      .order('id', { ascending: true })
+
+    if (error) {
+      throw new Error(`获取管理员列表失败: ${error.message}`)
+    }
+
+    return (data || []).map(d => ({
+      id: d.id,
+      username: d.username,
+      role: d.role,
+      hrContacts: d.hr_contacts || [],
+      createdBy: d.created_by,
+      createdAt: d.created_at,
+    }))
+  }
+
+  /** 创建管理员（仅 level1 可调用） */
+  async createAdmin(params: {
+    username: string
+    password: string
+    role: string
+    hrContacts: string[]
+    createdBy: number
+  }): Promise<{ id: number; username: string; role: string }> {
+    const { username, password, role, hrContacts, createdBy } = params
+
+    // 校验角色
+    if (!['level2', 'level3'].includes(role)) {
+      throw new Error('只能创建二级或三级管理员')
+    }
+
+    // 校验 hrContacts
+    const validContacts = ['魏经理', '孙经理']
+    if (role !== 'level1') {
+      for (const c of hrContacts) {
+        if (!validContacts.includes(c)) {
+          throw new Error(`无效的对接HR: ${c}，可选值: ${validContacts.join('、')}`)
+        }
+      }
+      if (hrContacts.length === 0) {
+        throw new Error('二三级管理员必须设置可查看的对接HR范围')
+      }
+    }
+
+    // 检查用户名是否已存在
+    const { data: existing } = await this.supabase
+      .from('hr_admins')
+      .select('id')
+      .eq('username', username)
+      .maybeSingle()
+
+    if (existing) {
+      throw new Error('用户名已存在')
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10)
+    const { data, error } = await this.supabase
+      .from('hr_admins')
+      .insert({
+        username,
+        password_hash: hashedPassword,
+        role,
+        hr_contacts: hrContacts,
+        created_by: createdBy,
+      })
+      .select('id, username, role')
+      .single()
+
+    if (error) {
+      throw new Error(`创建管理员失败: ${error.message}`)
+    }
+
+    return data
+  }
+
+  /** 删除管理员（仅 level1 可调用，不能删自己） */
+  async deleteAdmin(adminId: number, operatorId: number): Promise<void> {
+    if (adminId === operatorId) {
+      throw new Error('不能删除自己')
+    }
+
+    // 检查目标是否是 level1
+    const { data: target } = await this.supabase
+      .from('hr_admins')
+      .select('role')
+      .eq('id', adminId)
+      .maybeSingle()
+
+    if (!target) {
+      throw new Error('管理员不存在')
+    }
+
+    if (target.role === 'level1') {
+      throw new Error('不能删除一级管理员')
+    }
+
+    const { error } = await this.supabase
+      .from('hr_admins')
+      .delete()
+      .eq('id', adminId)
+
+    if (error) {
+      throw new Error(`删除管理员失败: ${error.message}`)
+    }
+  }
+
+  /** 修改管理员（重置密码 / 修改 hrContacts） */
+  async updateAdmin(params: {
+    adminId: number
+    password?: string
+    hrContacts?: string[]
+  }): Promise<void> {
+    const { adminId, password, hrContacts } = params
+
+    const updates: Record<string, any> = {}
+    if (password) {
+      updates.password_hash = await bcrypt.hash(password, 10)
+    }
+    if (hrContacts !== undefined) {
+      const validContacts = ['魏经理', '孙经理']
+      for (const c of hrContacts) {
+        if (!validContacts.includes(c)) {
+          throw new Error(`无效的对接HR: ${c}`)
+        }
+      }
+      updates.hr_contacts = hrContacts
+    }
+
+    if (Object.keys(updates).length === 0) {
+      throw new Error('没有需要更新的内容')
+    }
+
+    const { error } = await this.supabase
+      .from('hr_admins')
+      .update(updates)
+      .eq('id', adminId)
+
+    if (error) {
+      throw new Error(`修改管理员失败: ${error.message}`)
+    }
+  }
+
+  /** 构建员工查询的 HR 范围过滤条件 */
+  buildHrContactFilter(role: string, hrContacts: string[]): string[] | null {
+    if (role === 'level1') return null // null 表示不过滤，返回全部
+    return hrContacts.length > 0 ? hrContacts : null
+  }
+
+  /** 检查员工是否在管理员的查看范围内 */
+  async isEmployeeInScope(employeeId: number, role: string, hrContacts: string[]): Promise<boolean> {
+    if (role === 'level1') return true
+    const { data } = await this.supabase
+      .from('employees')
+      .select('hr_contact')
+      .eq('id', employeeId)
+      .maybeSingle()
+    if (!data) return false
+    return hrContacts.includes(data.hr_contact)
   }
 }

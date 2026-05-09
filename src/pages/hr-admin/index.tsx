@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye, GraduationCap, Settings, Trash2, TriangleAlert, Lock, LockOpen, Users } from 'lucide-react-taro'
+import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye, GraduationCap, Settings, Trash2, TriangleAlert, Lock, LockOpen, Users, UserPlus, Shield, KeyRound } from 'lucide-react-taro'
 
 interface EmployeeDetail {
   employee: {
@@ -86,6 +86,7 @@ const HrAdminPage = () => {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [adminRole, setAdminRole] = useState<string>('level1')  // level1 / level2 / level3
   const [employees, setEmployees] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [detail, setDetail] = useState<EmployeeDetail | null>(null)
@@ -106,6 +107,26 @@ const HrAdminPage = () => {
   const [lockingEmployeeId, setLockingEmployeeId] = useState<number | null>(null)
   const [lockingAction, setLockingAction] = useState<'lock' | 'unlock'>('lock')
 
+  // 管理员管理相关状态
+  const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [adminList, setAdminList] = useState<any[]>([])
+  const [showCreateAdmin, setShowCreateAdmin] = useState(false)
+  const [newAdminUsername, setNewAdminUsername] = useState('')
+  const [newAdminPassword, setNewAdminPassword] = useState('')
+  const [newAdminRole, setNewAdminRole] = useState<string>('level2')
+  const [newAdminHrContacts, setNewAdminHrContacts] = useState<string[]>([])
+  const [editingAdmin, setEditingAdmin] = useState<any>(null)
+  const [editAdminPassword, setEditAdminPassword] = useState('')
+  const [editAdminHrContacts, setEditAdminHrContacts] = useState<string[]>([])
+  const [deleteAdminId, setDeleteAdminId] = useState<number | null>(null)
+
+  // 角色标签
+  const ROLE_LABELS: Record<string, string> = {
+    level1: '一级管理员',
+    level2: '二级管理员',
+    level3: '三级管理员',
+  }
+
   // 登录
   const handleLogin = async () => {
     if (!username || !password) {
@@ -124,6 +145,7 @@ const HrAdminPage = () => {
 
       if (res.data.code === 200) {
         setToken(res.data.data.token)
+        setAdminRole(res.data.data.role || 'level1')
         setIsLoggedIn(true)
         Taro.showToast({ title: '登录成功', icon: 'success' })
         loadEmployeeList(res.data.data.token)
@@ -404,6 +426,127 @@ const HrAdminPage = () => {
     ? employees.filter((e) => e.name.includes(searchName) || e.phone.includes(searchName))
     : employees
 
+  // ==================== 管理员管理 ====================
+
+  // 加载管理员列表
+  const loadAdminList = async () => {
+    try {
+      setLoading(true)
+      const res = await Network.request({
+        url: '/api/hr/admins',
+        method: 'GET',
+        header: { Authorization: `Bearer ${token}` },
+      })
+      if (res.data.code === 200) {
+        setAdminList(res.data.data || [])
+      } else {
+        Taro.showToast({ title: res.data.msg || '加载失败', icon: 'none' })
+      }
+    } catch (error: any) {
+      Taro.showToast({ title: '加载管理员列表失败', icon: 'none' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 创建管理员
+  const handleCreateAdmin = async () => {
+    if (!newAdminUsername || !newAdminPassword) {
+      Taro.showToast({ title: '请填写用户名和密码', icon: 'none' })
+      return
+    }
+    if (newAdminPassword.length < 6) {
+      Taro.showToast({ title: '密码至少6位', icon: 'none' })
+      return
+    }
+    if (newAdminHrContacts.length === 0) {
+      Taro.showToast({ title: '请选择可查看的对接HR范围', icon: 'none' })
+      return
+    }
+    try {
+      const res = await Network.request({
+        url: '/api/hr/admins',
+        method: 'POST',
+        header: { Authorization: `Bearer ${token}` },
+        data: {
+          username: newAdminUsername,
+          password: newAdminPassword,
+          role: newAdminRole,
+          hrContacts: newAdminHrContacts,
+        },
+      })
+      if (res.data.code === 200) {
+        Taro.showToast({ title: '创建成功', icon: 'success' })
+        setShowCreateAdmin(false)
+        setNewAdminUsername('')
+        setNewAdminPassword('')
+        setNewAdminRole('level2')
+        setNewAdminHrContacts([])
+        loadAdminList()
+      } else {
+        Taro.showToast({ title: res.data.msg || '创建失败', icon: 'none' })
+      }
+    } catch (error: any) {
+      const msg = error?.data?.message || error?.data?.msg || '创建失败'
+      Taro.showToast({ title: msg, icon: 'none' })
+    }
+  }
+
+  // 删除管理员
+  const handleDeleteAdmin = async () => {
+    if (!deleteAdminId) return
+    try {
+      const res = await Network.request({
+        url: `/api/hr/admins/${deleteAdminId}/delete`,
+        method: 'POST',
+        header: { Authorization: `Bearer ${token}` },
+      })
+      if (res.data.code === 200) {
+        Taro.showToast({ title: '删除成功', icon: 'success' })
+        setDeleteAdminId(null)
+        loadAdminList()
+      } else {
+        Taro.showToast({ title: res.data.msg || '删除失败', icon: 'none' })
+      }
+    } catch (error: any) {
+      const msg = error?.data?.message || error?.data?.msg || '删除失败'
+      Taro.showToast({ title: msg, icon: 'none' })
+    }
+  }
+
+  // 修改管理员
+  const handleUpdateAdmin = async () => {
+    if (!editingAdmin) return
+    if (editAdminHrContacts.length === 0 && !editAdminPassword) {
+      Taro.showToast({ title: '请至少修改一项', icon: 'none' })
+      return
+    }
+    try {
+      const data: Record<string, any> = {}
+      if (editAdminPassword) data.password = editAdminPassword
+      if (editAdminHrContacts.length > 0) data.hrContacts = editAdminHrContacts
+
+      const res = await Network.request({
+        url: `/api/hr/admins/${editingAdmin.id}/update`,
+        method: 'POST',
+        header: { Authorization: `Bearer ${token}` },
+        data,
+      })
+      if (res.data.code === 200) {
+        Taro.showToast({ title: '修改成功', icon: 'success' })
+        setEditingAdmin(null)
+        setEditAdminPassword('')
+        setEditAdminHrContacts([])
+        loadAdminList()
+      } else {
+        Taro.showToast({ title: res.data.msg || '修改失败', icon: 'none' })
+      }
+    } catch (error: any) {
+      const msg = error?.data?.message || error?.data?.msg || '修改失败'
+      Taro.showToast({ title: msg, icon: 'none' })
+    }
+  }
+
   return (
     <View className="min-h-screen bg-gray-50">
       {/* =============== 详情视图 =============== */}
@@ -569,50 +712,56 @@ const HrAdminPage = () => {
                 )
               })}
 
-              {/* 下载按钮 */}
-              <Button
-                className="w-full mb-3"
-                onClick={() => downloadEmployeeFiles(detail.employee.id, detail.employee.name)}
-              >
-                <Download size={16} color="#ffffff" className="mr-2" />
-                打包下载全部资料
-              </Button>
+              {/* 下载按钮 - level3 不可见 */}
+              {adminRole !== 'level3' && (
+                <Button
+                  className="w-full mb-3"
+                  onClick={() => downloadEmployeeFiles(detail.employee.id, detail.employee.name)}
+                >
+                  <Download size={16} color="#ffffff" className="mr-2" />
+                  打包下载全部资料
+                </Button>
+              )}
 
-              {/* 锁定/解锁按钮 */}
-              <Button
-                className="w-full mb-3"
-                variant="outline"
-                onClick={() => {
-                  setLockingEmployeeId(detail.employee.id)
-                  setLockingAction(detail.employee.status === 'locked' ? 'unlock' : 'lock')
-                  setShowLockConfirm(true)
-                }}
-              >
-                {detail.employee.status === 'locked' ? (
-                  <>
-                    <LockOpen size={16} color="#2563eb" className="mr-2" />
-                    解锁资料
-                  </>
-                ) : (
-                  <>
-                    <Lock size={16} color="#f59e0b" className="mr-2" />
-                    锁定资料
-                  </>
-                )}
-              </Button>
+              {/* 锁定/解锁按钮 - level3 不可见 */}
+              {adminRole !== 'level3' && (
+                <Button
+                  className="w-full mb-3"
+                  variant="outline"
+                  onClick={() => {
+                    setLockingEmployeeId(detail.employee.id)
+                    setLockingAction(detail.employee.status === 'locked' ? 'unlock' : 'lock')
+                    setShowLockConfirm(true)
+                  }}
+                >
+                  {detail.employee.status === 'locked' ? (
+                    <>
+                      <LockOpen size={16} color="#2563eb" className="mr-2" />
+                      解锁资料
+                    </>
+                  ) : (
+                    <>
+                      <Lock size={16} color="#f59e0b" className="mr-2" />
+                      锁定资料
+                    </>
+                  )}
+                </Button>
+              )}
 
-              {/* 删除按钮 */}
-              <Button
-                className="w-full"
-                variant="outline"
-                onClick={() => {
-                  setDeletingEmployeeId(detail.employee.id)
-                  setShowDeleteConfirm(true)
-                }}
-              >
-                <Trash2 size={16} color="#dc2626" className="mr-2" />
-                删除员工资料
-              </Button>
+              {/* 删除按钮 - level3 不可见 */}
+              {adminRole !== 'level3' && (
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  onClick={() => {
+                    setDeletingEmployeeId(detail.employee.id)
+                    setShowDeleteConfirm(true)
+                  }}
+                >
+                  <Trash2 size={16} color="#dc2626" className="mr-2" />
+                  删除员工资料
+                </Button>
+              )}
             </View>
           </View>
         )
@@ -675,15 +824,27 @@ const HrAdminPage = () => {
       )}
 
       {/* =============== 员工列表视图 =============== */}
-      {isLoggedIn && !detail && (
+      {isLoggedIn && !detail && !showAdminPanel && (
         <View>
           <View className="bg-white border-b border-gray-200 p-4">
             <View className="flex justify-between items-center mb-3">
-              <Text className="block text-lg font-bold text-gray-900">
-                HR 管理系统
-              </Text>
-              <View onClick={() => setShowChangePwd(true)}>
-                <Settings size={20} color="#6b7280" />
+              <View className="flex items-center gap-2">
+                <Text className="block text-lg font-bold text-gray-900">
+                  HR 管理系统
+                </Text>
+                <Badge variant={adminRole === 'level1' ? 'default' : adminRole === 'level2' ? 'secondary' : 'outline'}>
+                  {ROLE_LABELS[adminRole]}
+                </Badge>
+              </View>
+              <View className="flex items-center gap-3">
+                {adminRole === 'level1' && (
+                  <View onClick={() => { loadAdminList(); setShowAdminPanel(true) }}>
+                    <Shield size={20} color="#2563eb" />
+                  </View>
+                )}
+                <View onClick={() => setShowChangePwd(true)}>
+                  <Settings size={20} color="#6b7280" />
+                </View>
               </View>
             </View>
 
@@ -781,15 +942,17 @@ const HrAdminPage = () => {
                           <Eye size={14} color="#ffffff" className="mr-1" />
                           查看资料
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="flex-1"
-                          onClick={() => downloadEmployeeFiles(employee.id, employee.name)}
-                        >
-                          <Download size={14} color="#6b7280" className="mr-1" />
-                          打包下载
-                        </Button>
+                        {adminRole !== 'level3' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => downloadEmployeeFiles(employee.id, employee.name)}
+                          >
+                            <Download size={14} color="#6b7280" className="mr-1" />
+                            打包下载
+                          </Button>
+                        )}
                       </View>
                     </CardContent>
                   </Card>
@@ -872,6 +1035,8 @@ const HrAdminPage = () => {
           </View>
         </View>
       )}
+
+      {/* 锁定确认弹窗 */}
       {showLockConfirm && detail && (
         <View className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={() => setShowLockConfirm(false)}>
           <View className="bg-white rounded-xl mx-8 p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation && e.stopPropagation()}>
@@ -891,6 +1056,203 @@ const HrAdminPage = () => {
               <Button className="flex-1" onClick={handleLockEmployee}>
                 {detail.employee.status === 'locked' ? '确认解锁' : '确认锁定'}
               </Button>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* =============== 管理员管理面板（level1 专属） =============== */}
+      {showAdminPanel && adminRole === 'level1' && (
+        <View className="min-h-screen bg-gray-50">
+          <View className="bg-white border-b border-gray-200 p-4">
+            <View className="flex items-center gap-3">
+              <View onClick={() => setShowAdminPanel(false)}>
+                <ArrowLeft size={20} color="#374151" />
+              </View>
+              <Text className="block text-lg font-bold text-gray-900">管理员管理</Text>
+            </View>
+          </View>
+
+          <View className="p-4">
+            <Button
+              className="w-full mb-4"
+              onClick={() => {
+                setNewAdminUsername('')
+                setNewAdminPassword('')
+                setNewAdminRole('level2')
+                setNewAdminHrContacts([])
+                setShowCreateAdmin(true)
+              }}
+            >
+              <UserPlus size={16} color="#ffffff" className="mr-2" />
+              创建管理员
+            </Button>
+
+            {adminList.length === 0 ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <Text className="block text-gray-500">暂无管理员数据</Text>
+                </CardContent>
+              </Card>
+            ) : (
+              <View className="flex flex-col gap-3">
+                {adminList.map((admin: any) => (
+                  <Card key={admin.id}>
+                    <CardContent className="p-4">
+                      <View className="flex justify-between items-start mb-2">
+                        <View className="flex items-center gap-2">
+                          <Shield size={16} color={admin.role === 'level1' ? '#2563eb' : '#6b7280'} />
+                          <Text className="block text-base font-semibold text-gray-900">{admin.username}</Text>
+                          <Badge variant={admin.role === 'level1' ? 'default' : admin.role === 'level2' ? 'secondary' : 'outline'}>
+                            {ROLE_LABELS[admin.role]}
+                          </Badge>
+                        </View>
+                      </View>
+                      <View className="mb-3">
+                        <Text className="block text-sm text-gray-500">
+                          查看范围：{admin.role === 'level1' ? '全部员工' : (admin.hrContacts || []).join('、') || '未设置'}
+                        </Text>
+                      </View>
+                      {admin.role !== 'level1' && (
+                        <View className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                              setEditingAdmin(admin)
+                              setEditAdminPassword('')
+                              setEditAdminHrContacts(admin.hrContacts || [])
+                            }}
+                          >
+                            <Settings size={14} color="#6b7280" className="mr-1" />
+                            修改
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => setDeleteAdminId(admin.id)}
+                          >
+                            <Trash2 size={14} color="#dc2626" className="mr-1" />
+                            删除
+                          </Button>
+                        </View>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* 创建管理员弹窗 */}
+      {showCreateAdmin && (
+        <View className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={() => setShowCreateAdmin(false)}>
+          <View className="bg-white rounded-xl mx-6 p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation && e.stopPropagation()}>
+            <Text className="block text-lg font-semibold text-gray-900 mb-4">创建管理员</Text>
+            <View className="flex flex-col gap-3">
+              <View>
+                <Text className="block text-sm text-gray-600 mb-1">用户名</Text>
+                <View className="bg-gray-50 rounded-lg px-3 py-2">
+                  <Input className="w-full bg-transparent" placeholder="请输入用户名" value={newAdminUsername} onInput={(e) => setNewAdminUsername(e.detail.value)} />
+                </View>
+              </View>
+              <View>
+                <Text className="block text-sm text-gray-600 mb-1">密码</Text>
+                <View className="bg-gray-50 rounded-lg px-3 py-2">
+                  <Input className="w-full bg-transparent" password placeholder="至少6位" value={newAdminPassword} onInput={(e) => setNewAdminPassword(e.detail.value)} />
+                </View>
+              </View>
+              <View>
+                <Text className="block text-sm text-gray-600 mb-1">管理员级别</Text>
+                <View className="flex gap-2">
+                  {['level2', 'level3'].map((r) => (
+                    <Button key={r} size="sm" variant={newAdminRole === r ? 'default' : 'outline'} onClick={() => setNewAdminRole(r)}>
+                      {ROLE_LABELS[r]}
+                    </Button>
+                  ))}
+                </View>
+              </View>
+              <View>
+                <Text className="block text-sm text-gray-600 mb-1">可查看的对接HR范围</Text>
+                <View className="flex gap-2">
+                  {['魏经理', '孙经理'].map((c) => (
+                    <Button
+                      key={c}
+                      size="sm"
+                      variant={newAdminHrContacts.includes(c) ? 'default' : 'outline'}
+                      onClick={() => {
+                        setNewAdminHrContacts(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])
+                      }}
+                    >
+                      {c}
+                    </Button>
+                  ))}
+                </View>
+              </View>
+              <Button className="w-full mt-2" onClick={handleCreateAdmin}>确认创建</Button>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 修改管理员弹窗 */}
+      {editingAdmin && (
+        <View className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={() => { setEditingAdmin(null); setEditAdminPassword(''); setEditAdminHrContacts([]) }}>
+          <View className="bg-white rounded-xl mx-6 p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation && e.stopPropagation()}>
+            <View className="flex items-center gap-2 mb-4">
+              <KeyRound size={18} color="#2563eb" />
+              <Text className="block text-lg font-semibold text-gray-900">修改管理员</Text>
+            </View>
+            <View className="mb-3">
+              <Text className="block text-sm text-gray-500">用户名：{editingAdmin.username}</Text>
+              <Text className="block text-sm text-gray-500">级别：{ROLE_LABELS[editingAdmin.role]}</Text>
+            </View>
+            <View className="flex flex-col gap-3">
+              <View>
+                <Text className="block text-sm text-gray-600 mb-1">重置密码（留空不修改）</Text>
+                <View className="bg-gray-50 rounded-lg px-3 py-2">
+                  <Input className="w-full bg-transparent" password placeholder="输入新密码" value={editAdminPassword} onInput={(e) => setEditAdminPassword(e.detail.value)} />
+                </View>
+              </View>
+              <View>
+                <Text className="block text-sm text-gray-600 mb-1">可查看的对接HR范围</Text>
+                <View className="flex gap-2">
+                  {['魏经理', '孙经理'].map((c) => (
+                    <Button
+                      key={c}
+                      size="sm"
+                      variant={editAdminHrContacts.includes(c) ? 'default' : 'outline'}
+                      onClick={() => {
+                        setEditAdminHrContacts(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])
+                      }}
+                    >
+                      {c}
+                    </Button>
+                  ))}
+                </View>
+              </View>
+              <Button className="w-full mt-2" onClick={handleUpdateAdmin}>确认修改</Button>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 删除管理员确认弹窗 */}
+      {deleteAdminId && (
+        <View className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={() => setDeleteAdminId(null)}>
+          <View className="bg-white rounded-xl mx-8 p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation && e.stopPropagation()}>
+            <View className="flex items-center gap-2 mb-3">
+              <TriangleAlert size={20} color="#dc2626" />
+              <Text className="block text-lg font-semibold text-gray-900">确认删除</Text>
+            </View>
+            <Text className="block text-sm text-gray-600 mb-4">确定删除该管理员？此操作不可恢复。</Text>
+            <View className="flex gap-3">
+              <Button className="flex-1" variant="outline" onClick={() => setDeleteAdminId(null)}>取消</Button>
+              <Button className="flex-1" onClick={handleDeleteAdmin}>确认删除</Button>
             </View>
           </View>
         </View>

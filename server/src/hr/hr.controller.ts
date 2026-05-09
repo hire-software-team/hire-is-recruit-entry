@@ -79,7 +79,7 @@ export class HrController {
     return {
       code: 200,
       msg: '登录成功',
-      data: { token, username: admin.username },
+      data: { token, username: admin.username, role: admin.role, hrContacts: admin.hrContacts },
     }
   }
 
@@ -352,9 +352,12 @@ export class HrController {
   async getEmployeeList(
     @Query('name') name?: string,
     @Query('phone') phone?: string,
+    @Req() req?: any,
   ) {
     console.log('管理员查询员工列表')
-    const result = await this.hrService.getEmployeeList({ name, phone })
+    const { role, hrContacts } = req.user
+    const hrFilter = this.hrService.buildHrContactFilter(role, hrContacts)
+    const result = await this.hrService.getEmployeeList({ name, phone, hrContacts: hrFilter })
     return {
       code: 200,
       data: result,
@@ -400,8 +403,16 @@ export class HrController {
    */
   @Get('employees/:id')
   @UseGuards(AuthGuard('jwt'))
-  async getEmployeeDetail(@Param('id') id: string) {
+  async getEmployeeDetail(@Param('id') id: string, @Req() req: any) {
     console.log('管理员查询员工详情:', id)
+    const { role, hrContacts } = req.user
+
+    // 检查查看范围
+    const inScope = await this.hrService.isEmployeeInScope(Number(id), role, hrContacts)
+    if (!inScope) {
+      throw new ForbiddenException('无权查看该员工资料')
+    }
+
     const result = await this.hrService.getEmployeeDetail(Number(id))
 
     if (!result) {
@@ -433,8 +444,21 @@ export class HrController {
   async downloadEmployeeFiles(
     @Param('id') id: string,
     @Res() res: Response,
+    @Req() req: any,
   ) {
     console.log('管理员下载员工资料:', id)
+    const { role, hrContacts } = req.user
+
+    // level3 无权下载
+    if (role === 'level3') {
+      throw new ForbiddenException('三级管理员无权下载资料')
+    }
+
+    // 检查查看范围
+    const inScope = await this.hrService.isEmployeeInScope(Number(id), role, hrContacts)
+    if (!inScope) {
+      throw new ForbiddenException('无权下载该员工资料')
+    }
 
     const result = await this.hrService.getEmployeeDetail(Number(id))
     if (!result) {
@@ -494,8 +518,21 @@ export class HrController {
   @Post('employees/:id/delete')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(200)
-  async deleteEmployee(@Param('id') id: string) {
+  async deleteEmployee(@Param('id') id: string, @Req() req: any) {
     console.log('管理员删除员工资料:', id)
+    const { role, hrContacts } = req.user
+
+    // level3 无权删除
+    if (role === 'level3') {
+      throw new ForbiddenException('三级管理员无权删除资料')
+    }
+
+    // 检查操作范围
+    const inScope = await this.hrService.isEmployeeInScope(Number(id), role, hrContacts)
+    if (!inScope) {
+      throw new ForbiddenException('无权删除该员工资料')
+    }
+
     try {
       await this.hrService.deleteEmployee(Number(id))
       return {
@@ -514,8 +551,21 @@ export class HrController {
   @Post('employees/:id/lock')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(200)
-  async toggleEmployeeLock(@Param('id') id: string) {
+  async toggleEmployeeLock(@Param('id') id: string, @Req() req: any) {
     console.log('管理员切换员工锁定状态:', id)
+    const { role, hrContacts } = req.user
+
+    // level3 无权锁定/解锁
+    if (role === 'level3') {
+      throw new ForbiddenException('三级管理员无权锁定/解锁资料')
+    }
+
+    // 检查操作范围
+    const inScope = await this.hrService.isEmployeeInScope(Number(id), role, hrContacts)
+    if (!inScope) {
+      throw new ForbiddenException('无权操作该员工资料')
+    }
+
     try {
       const result = await this.hrService.toggleEmployeeLock(Number(id))
       return {
@@ -607,5 +657,102 @@ export class HrController {
       degree_cert_4: '学位证书4',
     }
     return typeMap[fileType] || fileType
+  }
+
+  // ==================== 管理员 CRUD（仅 level1） ====================
+
+  /** 获取管理员列表 */
+  @Get('admins')
+  @UseGuards(AuthGuard('jwt'))
+  async getAdminList(@Req() req: any) {
+    const { role } = req.user
+    if (role !== 'level1') {
+      throw new ForbiddenException('仅一级管理员可查看管理员列表')
+    }
+    const list = await this.hrService.getAdminList()
+    return { code: 200, data: list }
+  }
+
+  /** 创建管理员 */
+  @Post('admins')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  async createAdmin(
+    @Body() body: { username: string; password: string; role: string; hrContacts: string[] },
+    @Req() req: any,
+  ) {
+    const { role: operatorRole, userId } = req.user
+    if (operatorRole !== 'level1') {
+      throw new ForbiddenException('仅一级管理员可创建管理员')
+    }
+    if (!body.username || !body.password) {
+      throw new BadRequestException('用户名和密码不能为空')
+    }
+    if (body.password.length < 6) {
+      throw new BadRequestException('密码长度至少6位')
+    }
+    if (!['level2', 'level3'].includes(body.role)) {
+      throw new BadRequestException('只能创建二级或三级管理员')
+    }
+
+    try {
+      const result = await this.hrService.createAdmin({
+        username: body.username,
+        password: body.password,
+        role: body.role,
+        hrContacts: body.hrContacts || [],
+        createdBy: userId,
+      })
+      return { code: 200, msg: '创建成功', data: result }
+    } catch (error: any) {
+      throw new BadRequestException(error.message || '创建失败')
+    }
+  }
+
+  /** 删除管理员 */
+  @Post('admins/:id/delete')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  async deleteAdmin(@Param('id') id: string, @Req() req: any) {
+    const { role: operatorRole, userId } = req.user
+    if (operatorRole !== 'level1') {
+      throw new ForbiddenException('仅一级管理员可删除管理员')
+    }
+
+    try {
+      await this.hrService.deleteAdmin(Number(id), userId)
+      return { code: 200, msg: '删除成功' }
+    } catch (error: any) {
+      throw new BadRequestException(error.message || '删除失败')
+    }
+  }
+
+  /** 修改管理员（重置密码 / 修改 hrContacts） */
+  @Post('admins/:id/update')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  async updateAdmin(
+    @Param('id') id: string,
+    @Body() body: { password?: string; hrContacts?: string[] },
+    @Req() req: any,
+  ) {
+    const { role: operatorRole } = req.user
+    if (operatorRole !== 'level1') {
+      throw new ForbiddenException('仅一级管理员可修改管理员')
+    }
+    if (body.password && body.password.length < 6) {
+      throw new BadRequestException('密码长度至少6位')
+    }
+
+    try {
+      await this.hrService.updateAdmin({
+        adminId: Number(id),
+        password: body.password,
+        hrContacts: body.hrContacts,
+      })
+      return { code: 200, msg: '修改成功' }
+    } catch (error: any) {
+      throw new BadRequestException(error.message || '修改失败')
+    }
   }
 }
