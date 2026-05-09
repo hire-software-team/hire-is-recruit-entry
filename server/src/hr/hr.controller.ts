@@ -257,10 +257,42 @@ export class HrController {
     // 检查手机号是否已提交
     const existing = await this.hrService.lookupByPhone(body.phone)
     if (existing) {
-      throw new BadRequestException('该手机号已提交过资料')
+      // 已锁定，不允许修改
+      if (existing.employee.status === 'locked') {
+        throw new ForbiddenException('资料已被锁定，无法修改')
+      }
+      // 未锁定，执行更新
+      const employee = await this.hrService.createEmployee({
+        name: body.name,
+        phone: body.phone,
+        education: body.education,
+        join_date: body.joinDate,
+      })
+
+      // 替换文件记录
+      const newFilesData = body.files.map(file => ({
+        file_type: file.fileType,
+        file_key: file.fileKey,
+        file_name: file.fileName,
+        file_size: file.fileSize,
+        file_type_ext: file.fileMimetype || guessMimeType(file.fileName),
+        verification_override: file.verificationOverride || false,
+      }))
+      const fileRecords = await this.hrService.replaceEmployeeFiles(employee.id, newFilesData)
+
+      console.log('员工资料更新成功:', { employeeId: employee.id, fileCount: fileRecords.length })
+
+      return {
+        code: 200,
+        msg: '更新成功',
+        data: {
+          employee,
+          files: fileRecords,
+        },
+      }
     }
 
-    // 创建员工记录
+    // 新建员工记录
     const employee = await this.hrService.createEmployee({
       name: body.name,
       phone: body.phone,
@@ -306,6 +338,21 @@ export class HrController {
   ) {
     console.log('管理员查询员工列表')
     const result = await this.hrService.getEmployeeList({ name, phone })
+    return {
+      code: 200,
+      data: result,
+    }
+  }
+
+  /**
+   * 查询员工资料状态（通过手机号，无需鉴权）
+   */
+  @Get('employees/status')
+  async getEmployeeStatus(@Query('phone') phone: string) {
+    if (!phone) {
+      throw new BadRequestException('请提供手机号')
+    }
+    const result = await this.hrService.getEmployeeStatus(phone)
     return {
       code: 200,
       data: result,
@@ -424,6 +471,28 @@ export class HrController {
       throw new BadRequestException(error.message || '删除失败')
     }
   }
+
+  /**
+   * 锁定/解锁员工资料（管理员，JWT 鉴权）
+   */
+  @Post('employees/:id/lock')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  async toggleEmployeeLock(@Param('id') id: string) {
+    console.log('管理员切换员工锁定状态:', id)
+    try {
+      const result = await this.hrService.toggleEmployeeLock(Number(id))
+      return {
+        code: 200,
+        msg: result.status === 'locked' ? '锁定成功' : '解锁成功',
+        data: result,
+      }
+    } catch (error: any) {
+      console.error('切换锁定状态失败:', error)
+      throw new BadRequestException(error.message || '操作失败')
+    }
+  }
+
 
   /**
    * 修改管理员密码（JWT 鉴权）

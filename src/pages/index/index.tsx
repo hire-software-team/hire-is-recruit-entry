@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Upload, Settings, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User, GraduationCap, LoaderCircle } from 'lucide-react-taro'
+import { Upload, Settings, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User, GraduationCap, LoaderCircle, Lock, PenLine } from 'lucide-react-taro'
 
 interface FileInfo {
   fileType: string
@@ -145,6 +145,9 @@ const IndexPage = () => {
   const [signatureFile, setSignatureFile] = useState<FileInfo | null>(null)
   const [isSigning, setIsSigning] = useState(false)
 
+  // 锁定状态
+  const [isLocked, setIsLocked] = useState(false)
+
   // 草稿缓存 Key
   const DRAFT_KEY = 'hrDraft'
   const SUBMITTED_KEY = 'hrSubmittedData'
@@ -197,31 +200,47 @@ const IndexPage = () => {
 
   // 页面加载时恢复数据
   useEffect(() => {
-    // 1. 优先检查已提交的资料
-    const submittedStr = Taro.getStorageSync(SUBMITTED_KEY)
-    if (submittedStr) {
-      try {
-        const submitted = JSON.parse(submittedStr)
-        if (submitted && submitted.employee) {
-          const emp = submitted.employee
-          setSubmittedData(submitted)
-          setName(emp.name || '')
-          setPhone(emp.phone || '')
-          setEducation(emp.education || '')
-          setJoinDate(emp.join_date || emp.joinDate || '')
-          // 已提交的资料不恢复文件列表（文件信息无本地预览路径）
-          setUploadedFiles([])
-          setIsLoadingData(false)
-          return
+    const initPage = async () => {
+      // 1. 优先检查已提交的资料（从 localStorage）
+      const submittedStr = Taro.getStorageSync(SUBMITTED_KEY)
+      if (submittedStr) {
+        try {
+          const submitted = JSON.parse(submittedStr)
+          if (submitted && submitted.employee) {
+            const emp = submitted.employee
+            setSubmittedData(submitted)
+            setName(emp.name || '')
+            setPhone(emp.phone || '')
+            setEducation(emp.education || '')
+            setJoinDate(emp.join_date || emp.joinDate || '')
+            setUploadedFiles([])
+
+            // 通过 API 检查锁定状态
+            try {
+              const res = await Network.request({
+                url: `/api/hr/employees/status?phone=${encodeURIComponent(emp.phone)}`,
+              })
+              if (res?.data?.data?.locked) {
+                setIsLocked(true)
+              }
+            } catch (e) {
+              console.error('查询锁定状态失败:', e)
+            }
+
+            setIsLoadingData(false)
+            return
+          }
+        } catch (e) {
+          console.error('恢复已提交数据失败:', e)
         }
-      } catch (e) {
-        console.error('恢复已提交数据失败:', e)
       }
+
+      // 2. 没有已提交资料，尝试恢复草稿
+      loadDraft()
+      setIsLoadingData(false)
     }
 
-    // 2. 没有已提交资料，尝试恢复草稿
-    loadDraft()
-    setIsLoadingData(false)
+    initPage()
   }, [])
 
   // 从 localStorage 恢复草稿（仅恢复表单数据，文件需重新上传）
@@ -605,6 +624,7 @@ const IndexPage = () => {
   }
 
   const handleSubmit = async () => {
+    if (isLocked) { Taro.showToast({ title: '资料已被锁定，无法修改', icon: 'none' }); return }
     if (!name.trim()) { Taro.showToast({ title: '请输入姓名', icon: 'none' }); return }
     if (!phone.trim()) { Taro.showToast({ title: '请输入手机号', icon: 'none' }); return }
     if (!/^1[3-9]\d{9}$/.test(phone.trim())) { Taro.showToast({ title: '请输入正确的11位手机号', icon: 'none' }); return }
@@ -875,16 +895,43 @@ const IndexPage = () => {
           </Button>
         </View>
 
-        <Card className="mb-4 border-green-200 bg-green-50">
+        <Card className={`mb-4 border ${isLocked ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}`}>
           <CardContent className="p-4 flex items-center gap-3">
-            <CircleCheck size={24} color="#16a34a" />
-            <View className="flex-1">
-              <Text className="block text-base font-semibold text-green-800">资料已提交</Text>
-              <Text className="block text-sm text-green-600">请耐心等待HR审核，提交后不可修改</Text>
-            </View>
-            <Badge variant="secondary">已提交</Badge>
+            {isLocked ? (
+              <>
+                <Lock size={24} color="#dc2626" />
+                <View className="flex-1">
+                  <Text className="block text-base font-semibold text-red-800">资料已锁定</Text>
+                  <Text className="block text-sm text-red-600">资料已被管理员锁定，无法修改</Text>
+                </View>
+                <Badge className="bg-red-100 text-red-700">已锁定</Badge>
+              </>
+            ) : (
+              <>
+                <CircleCheck size={24} color="#16a34a" />
+                <View className="flex-1">
+                  <Text className="block text-base font-semibold text-green-800">资料已提交</Text>
+                  <Text className="block text-sm text-green-600">您可以随时修改并重新提交</Text>
+                </View>
+                <Badge variant="secondary">已提交</Badge>
+              </>
+            )}
           </CardContent>
         </Card>
+
+        {/* 修改资料按钮 */}
+        {!isLocked && (
+          <View className="mb-4">
+            <Button className="w-full" onClick={() => {
+              setSubmittedData(null)
+              Taro.showToast({ title: '可修改资料后重新提交', icon: 'none' })
+            }}
+            >
+              <PenLine size={16} color="#ffffff" className="mr-2" />
+              修改资料
+            </Button>
+          </View>
+        )}
 
         {/* 基本信息 */}
         <Card className="mb-4">
@@ -1158,7 +1205,7 @@ const IndexPage = () => {
 
       {/* 提交按钮 */}
       <Button className="w-full" onClick={handleSubmit} disabled={isUploading || !agreed || !signatureFile}>
-        {isUploading ? '提交中...' : '提交资料'}
+        {isUploading ? '提交中...' : submittedData ? '重新提交资料' : '提交资料'}
       </Button>
 
       {/* AI校验未通过弹窗 */}

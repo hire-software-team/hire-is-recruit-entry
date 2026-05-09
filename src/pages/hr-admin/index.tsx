@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye, GraduationCap, Settings, Trash2, TriangleAlert } from 'lucide-react-taro'
+import { Download, Search, LogIn, User, Calendar, Phone, ArrowLeft, FileImage, FileText, Eye, GraduationCap, Settings, Trash2, TriangleAlert, Lock, LockOpen } from 'lucide-react-taro'
 
 interface EmployeeDetail {
   employee: {
@@ -98,6 +98,11 @@ const HrAdminPage = () => {
   // 删除确认相关状态
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingEmployeeId, setDeletingEmployeeId] = useState<number | null>(null)
+
+  // 锁定相关状态
+  const [showLockConfirm, setShowLockConfirm] = useState(false)
+  const [lockingEmployeeId, setLockingEmployeeId] = useState<number | null>(null)
+  const [lockingAction, setLockingAction] = useState<'lock' | 'unlock'>('lock')
 
   // 登录
   const handleLogin = async () => {
@@ -189,6 +194,42 @@ const HrAdminPage = () => {
       }
     } catch (error: any) {
       Taro.showToast({ title: error.message || '删除失败', icon: 'none' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 锁定/解锁员工资料
+  const handleLockEmployee = async () => {
+    if (!lockingEmployeeId) return
+    try {
+      setLoading(true)
+      const res = await Network.request({
+        url: `/api/hr/employees/${lockingEmployeeId}/lock`,
+        method: 'POST',
+        header: { Authorization: `Bearer ${token}` },
+        data: { action: lockingAction },
+      })
+      if (res.data.code === 200) {
+        Taro.showToast({ title: lockingAction === 'lock' ? '锁定成功' : '解锁成功', icon: 'success' })
+        setShowLockConfirm(false)
+        setLockingEmployeeId(null)
+        // 刷新详情
+        if (detail) {
+          const detailRes = await Network.request({
+            url: `/api/hr/employees/${detail.employee.id}`,
+            header: { Authorization: `Bearer ${token}` },
+          })
+          if (detailRes.data.code === 200) {
+            setDetail(detailRes.data.data)
+          }
+        }
+        loadEmployeeList()
+      } else {
+        Taro.showToast({ title: res.data.msg || '操作失败', icon: 'none' })
+      }
+    } catch (error: any) {
+      Taro.showToast({ title: error.message || '操作失败', icon: 'none' })
     } finally {
       setLoading(false)
     }
@@ -347,6 +388,8 @@ const HrAdminPage = () => {
     switch (status) {
       case 'submitted':
         return <Badge variant="secondary">已提交</Badge>
+      case 'locked':
+        return <Badge variant="destructive">已锁定</Badge>
       case 'completed':
         return <Badge variant="default">已完成</Badge>
       default:
@@ -526,6 +569,29 @@ const HrAdminPage = () => {
               >
                 <Download size={16} color="#ffffff" className="mr-2" />
                 打包下载全部资料
+              </Button>
+
+              {/* 锁定/解锁按钮 */}
+              <Button
+                className="w-full mb-3"
+                variant="outline"
+                onClick={() => {
+                  setLockingEmployeeId(detail.employee.id)
+                  setLockingAction(detail.employee.status === 'locked' ? 'unlock' : 'lock')
+                  setShowLockConfirm(true)
+                }}
+              >
+                {detail.employee.status === 'locked' ? (
+                  <>
+                    <LockOpen size={16} color="#2563eb" className="mr-2" />
+                    解锁资料
+                  </>
+                ) : (
+                  <>
+                    <Lock size={16} color="#f59e0b" className="mr-2" />
+                    锁定资料
+                  </>
+                )}
               </Button>
 
               {/* 删除按钮 */}
@@ -788,6 +854,29 @@ const HrAdminPage = () => {
               </Button>
               <Button className="flex-1" onClick={handleDeleteEmployee}>
                 确认删除
+              </Button>
+            </View>
+          </View>
+        </View>
+      )}
+      {showLockConfirm && detail && (
+        <View className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={() => setShowLockConfirm(false)}>
+          <View className="bg-white rounded-xl mx-8 p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation && e.stopPropagation()}>
+            <View className="flex items-center gap-2 mb-3">
+              {detail.employee.status === 'locked' ? <LockOpen size={20} color="#16a34a" /> : <Lock size={20} color="#f59e0b" />}
+              <Text className="block text-lg font-semibold text-gray-900">
+                {detail.employee.status === 'locked' ? '解锁资料' : '锁定资料'}
+              </Text>
+            </View>
+            <Text className="block text-sm text-gray-600 mb-4">
+              {detail.employee.status === 'locked'
+                ? '解锁后该员工可以继续修改和提交资料，确定解锁？'
+                : '锁定后该员工将无法修改和提交资料，确定锁定？'}
+            </Text>
+            <View className="flex gap-3">
+              <Button className="flex-1" variant="outline" onClick={() => setShowLockConfirm(false)}>取消</Button>
+              <Button className="flex-1" onClick={handleLockEmployee}>
+                {detail.employee.status === 'locked' ? '确认解锁' : '确认锁定'}
               </Button>
             </View>
           </View>

@@ -157,9 +157,40 @@ export class HrService {
   }
 
   /**
-   * 创建员工记录
+   * 创建或更新员工记录
+   * 如果手机号已存在且未锁定，则更新；如果已锁定，则拒绝
    */
   async createEmployee(dto: CreateEmployeeDto): Promise<Employee> {
+    // 先检查手机号是否已存在
+    const existing = await this.lookupByPhone(dto.phone)
+
+    if (existing) {
+      // 已锁定，不允许修改
+      if (existing.employee.status === 'locked') {
+        throw new Error('资料已被锁定，无法修改')
+      }
+      // 未锁定，执行更新
+      const { data, error } = await this.supabase
+        .from('employees')
+        .update({
+          name: dto.name,
+          education: dto.education,
+          join_date: dto.join_date,
+          status: 'submitted',
+        })
+        .eq('id', existing.employee.id)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('更新员工失败:', error)
+        throw new Error(`更新员工失败: ${error.message}`)
+      }
+
+      return data as Employee
+    }
+
+    // 新建员工记录
     const { data, error } = await this.supabase
       .from('employees')
       .insert({
@@ -178,6 +209,94 @@ export class HrService {
     }
 
     return data as Employee
+  }
+
+  /**
+   * 替换员工文件：先删除旧文件（Storage + 数据库），再插入新文件
+   */
+  async replaceEmployeeFiles(employeeId: number, newFiles: Array<{
+    file_type: string
+    file_key: string
+    file_name: string
+    file_size: number
+    file_type_ext: string
+    verification_override?: boolean
+  }>): Promise<EmployeeFile[]> {
+    // 1. 获取旧文件列表
+    const { data: oldFiles } = await this.supabase
+      .from('employee_files')
+      .select('file_key')
+      .eq('employee_id', employeeId)
+
+    // 2. 删除旧文件的 Storage 对象
+    if (oldFiles && oldFiles.length > 0) {
+      for (const file of oldFiles) {
+        try {
+          await this.storageService.deleteFile(file.file_key)
+        } catch (e) {
+          console.error('删除旧文件失败:', maskSensitive(file.file_key), e)
+        }
+      }
+    }
+
+    // 3. 删除旧文件的数据库记录
+    await this.supabase
+      .from('employee_files')
+      .delete()
+      .eq('employee_id', employeeId)
+
+    // 4. 插入新文件记录
+    const fileRecords: EmployeeFile[] = []
+    for (const fileData of newFiles) {
+      const fileRecord = await this.createEmployeeFile(employeeId, fileData)
+      fileRecords.push(fileRecord)
+    }
+
+    return fileRecords
+  }
+
+  /**
+   * 切换员工锁定状态
+   */
+  async toggleEmployeeLock(id: number): Promise<{ status: string }> {
+    const { data: employee, error: empError } = await this.supabase
+      .from('employees')
+      .select('id, status')
+      .eq('id', id)
+      .single()
+
+    if (empError || !employee) {
+      throw new Error('员工不存在')
+    }
+
+    const newStatus = employee.status === 'locked' ? 'submitted' : 'locked'
+
+    const { error: updateError } = await this.supabase
+      .from('employees')
+      .update({ status: newStatus })
+      .eq('id', id)
+
+    if (updateError) {
+      throw new Error(`更新状态失败: ${updateError.message}`)
+    }
+
+    console.log(`员工 ${id} 状态已切换为: ${newStatus}`)
+    return { status: newStatus }
+  }
+
+  /**
+   * 查询员工资料状态（通过手机号，无需鉴权）
+   */
+  async getEmployeeStatus(phone: string): Promise<{ submitted: boolean; locked: boolean; employeeId?: number }> {
+    const result = await this.lookupByPhone(phone)
+    if (!result) {
+      return { submitted: false, locked: false }
+    }
+    return {
+      submitted: true,
+      locked: result.employee.status === 'locked',
+      employeeId: result.employee.id,
+    }
   }
 
   /**
