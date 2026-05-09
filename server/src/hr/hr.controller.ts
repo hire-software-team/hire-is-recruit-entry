@@ -240,11 +240,27 @@ export class HrController {
       throw new BadRequestException('请上传所需资料')
     }
 
+    // 检查手机号是否已提交
+    const existing = await this.hrService.lookupByPhone(body.phone)
+
+    // 收集已有文件的 fileKey（重新提交时这些文件已在数据库中，无需 session 验证）
+    const existingFileKeys = new Set<string>()
+    if (existing) {
+      for (const f of existing.files) {
+        existingFileKeys.add(f.fileKey)
+      }
+    }
+
     // 验证所有 fileKey 与 uploadToken 的绑定关系（防止伪造 fileKey 窃取他人文件）
     for (const file of body.files) {
       if (!file.fileKey) {
         throw new BadRequestException('文件key不能为空')
       }
+      // 已有文件：跳过 session 验证（session 可能因重启丢失），改为验证数据库记录
+      if (existingFileKeys.has(file.fileKey)) {
+        continue
+      }
+      // 新上传文件：必须通过 session 验证
       if (!file.uploadToken) {
         throw new BadRequestException('文件授权凭证不能为空')
       }
@@ -254,8 +270,7 @@ export class HrController {
       }
     }
 
-    // 检查手机号是否已提交
-    const existing = await this.hrService.lookupByPhone(body.phone)
+    if (existing) {
     if (existing) {
       // 已锁定，不允许修改
       if (existing.employee.status === 'locked') {
