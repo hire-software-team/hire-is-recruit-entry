@@ -563,33 +563,30 @@ const IndexPage = () => {
               ctx.lineCap = 'round'
               ctx.lineJoin = 'round'
 
-              // H5/电脑端：绑定鼠标事件到 canvas DOM 节点
-              if (typeof document !== 'undefined') {
-                const canvasEl = document.getElementById(SIGNATURE_CANVAS_ID)
-                if (canvasEl) {
-                  const getMousePos = (evt: MouseEvent) => {
-                    const rect = canvasEl.getBoundingClientRect()
-                    return { x: evt.clientX - rect.left, y: evt.clientY - rect.top }
-                  }
-                  canvasEl.addEventListener('mousedown', (evt: MouseEvent) => {
-                    isDrawingRef.current = true
-                    const pos = getMousePos(evt)
-                    ctx.beginPath()
-                    ctx.moveTo(pos.x, pos.y)
-                  })
-                  canvasEl.addEventListener('mousemove', (evt: MouseEvent) => {
-                    if (!isDrawingRef.current) return
-                    const pos = getMousePos(evt)
-                    ctx.lineTo(pos.x, pos.y)
-                    ctx.stroke()
-                  })
-                  canvasEl.addEventListener('mouseup', () => {
-                    isDrawingRef.current = false
-                  })
-                  canvasEl.addEventListener('mouseleave', () => {
-                    isDrawingRef.current = false
-                  })
+              // H5/电脑端：用 canvas 2D 节点绑定鼠标事件（比 getElementById 更可靠）
+              if (typeof canvas.addEventListener === 'function') {
+                const getMousePos = (evt: MouseEvent) => {
+                  const rect = canvas.getBoundingClientRect()
+                  return { x: evt.clientX - rect.left, y: evt.clientY - rect.top }
                 }
+                canvas.addEventListener('mousedown', (evt: MouseEvent) => {
+                  isDrawingRef.current = true
+                  const pos = getMousePos(evt)
+                  ctx.beginPath()
+                  ctx.moveTo(pos.x, pos.y)
+                })
+                canvas.addEventListener('mousemove', (evt: MouseEvent) => {
+                  if (!isDrawingRef.current) return
+                  const pos = getMousePos(evt)
+                  ctx.lineTo(pos.x, pos.y)
+                  ctx.stroke()
+                })
+                canvas.addEventListener('mouseup', () => {
+                  isDrawingRef.current = false
+                })
+                canvas.addEventListener('mouseleave', () => {
+                  isDrawingRef.current = false
+                })
               }
             }
           }
