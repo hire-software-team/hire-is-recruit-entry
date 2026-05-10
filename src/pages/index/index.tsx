@@ -537,6 +537,48 @@ const IndexPage = () => {
   // ===== 签字确认功能 =====
   const SIGNATURE_CANVAS_ID = 'signatureCanvas'
   const canvasNodeRef = useRef<any>(null)
+  // 保存2d绘图上下文，供触摸和鼠标事件共用
+  const drawCtxRef = useRef<CanvasRenderingContext2D | null>(null)
+
+  // 为Canvas节点绑定鼠标事件（支持PC端鼠标签字）
+  const bindMouseEvents = (canvas: any, ctx: CanvasRenderingContext2D) => {
+    if (!canvas || typeof canvas.addEventListener !== 'function') {
+      console.log('bindMouseEvents: canvas不支持addEventListener')
+      return
+    }
+    const getPos = (evt: any) => {
+      // 优先使用getBoundingClientRect（标准DOM）
+      if (typeof canvas.getBoundingClientRect === 'function') {
+        const r = canvas.getBoundingClientRect()
+        return { x: evt.clientX - r.left, y: evt.clientY - r.top }
+      }
+      // 降级：使用canvas的width/height和clientX/clientY估算
+      // 这种方式不够精确，但总比没有好
+      return { x: evt.offsetX || evt.layerX || 0, y: evt.offsetY || evt.layerY || 0 }
+    }
+    console.log('bindMouseEvents: 开始绑定鼠标事件')
+    canvas.addEventListener('mousedown', (evt: any) => {
+      evt.preventDefault()
+      isDrawingRef.current = true
+      const pos = getPos(evt)
+      ctx.beginPath()
+      ctx.moveTo(pos.x, pos.y)
+      console.log('鼠标签字开始', pos)
+    })
+    canvas.addEventListener('mousemove', (evt: any) => {
+      if (!isDrawingRef.current) return
+      evt.preventDefault()
+      const pos = getPos(evt)
+      ctx.lineTo(pos.x, pos.y)
+      ctx.stroke()
+    })
+    canvas.addEventListener('mouseup', () => {
+      isDrawingRef.current = false
+    })
+    canvas.addEventListener('mouseleave', () => {
+      isDrawingRef.current = false
+    })
+  }
 
   const handleOpenSignDialog = () => {
     if (!agreed) {
@@ -546,55 +588,63 @@ const IndexPage = () => {
     setShowSignDialog(true)
     // 延迟初始化画布，确保DOM已渲染
     setTimeout(() => {
-      try {
-        const query = Taro.createSelectorQuery()
-        query.select(`#${SIGNATURE_CANVAS_ID}`).fields({ node: true, size: true }).exec((res) => {
-          if (res && res[0]) {
-            const canvas = res[0].node
-            if (canvas) {
-              canvasNodeRef.current = canvas
-              const ctx = canvas.getContext('2d')
-              const dpr = Taro.getSystemInfoSync().pixelRatio
-              canvas.width = res[0].width * dpr
-              canvas.height = res[0].height * dpr
+      const isH5 = typeof window !== 'undefined' && typeof document !== 'undefined'
+      
+      // 统一使用 SelectorQuery 获取 Canvas 2D 节点
+      const query = Taro.createSelectorQuery()
+      query.select(`#${SIGNATURE_CANVAS_ID}`).fields({ node: true, size: true }).exec((res) => {
+        if (!res || !res[0] || !res[0].node) {
+          console.log('签字Canvas节点未找到，尝试DOM降级')
+          // DOM降级方案（H5端）
+          if (isH5) {
+            const allCanvases = document.querySelectorAll('canvas')
+            if (allCanvases.length > 0) {
+              const domCanvas = allCanvases[allCanvases.length - 1] as HTMLCanvasElement
+              const dpr = window.devicePixelRatio || 1
+              const rect = domCanvas.getBoundingClientRect()
+              domCanvas.width = rect.width * dpr
+              domCanvas.height = rect.height * dpr
+              const ctx = domCanvas.getContext('2d')!
               ctx.scale(dpr, dpr)
               ctx.strokeStyle = '#000000'
               ctx.lineWidth = 3
               ctx.lineCap = 'round'
               ctx.lineJoin = 'round'
-
-              // H5/电脑端：用 canvas 2D 节点绑定鼠标事件（比 getElementById 更可靠）
-              if (typeof canvas.addEventListener === 'function') {
-                const getMousePos = (evt: MouseEvent) => {
-                  const rect = canvas.getBoundingClientRect()
-                  return { x: evt.clientX - rect.left, y: evt.clientY - rect.top }
-                }
-                canvas.addEventListener('mousedown', (evt: MouseEvent) => {
-                  isDrawingRef.current = true
-                  const pos = getMousePos(evt)
-                  ctx.beginPath()
-                  ctx.moveTo(pos.x, pos.y)
-                })
-                canvas.addEventListener('mousemove', (evt: MouseEvent) => {
-                  if (!isDrawingRef.current) return
-                  const pos = getMousePos(evt)
-                  ctx.lineTo(pos.x, pos.y)
-                  ctx.stroke()
-                })
-                canvas.addEventListener('mouseup', () => {
-                  isDrawingRef.current = false
-                })
-                canvas.addEventListener('mouseleave', () => {
-                  isDrawingRef.current = false
-                })
-              }
+              drawCtxRef.current = ctx
+              canvasNodeRef.current = domCanvas
+              bindMouseEvents(domCanvas, ctx)
+              console.log('签字Canvas DOM降级初始化成功')
             }
           }
-        })
-      } catch (e) {
-        // Canvas 初始化失败降级处理
-        console.log('Canvas初始化异常')
-      }
+          return
+        }
+        
+        const canvas = res[0].node
+        canvasNodeRef.current = canvas
+        const ctx = canvas.getContext('2d')
+        const dpr = Taro.getSystemInfoSync().pixelRatio
+        canvas.width = res[0].width * dpr
+        canvas.height = res[0].height * dpr
+        ctx.scale(dpr, dpr)
+        ctx.strokeStyle = '#000000'
+        ctx.lineWidth = 3
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        drawCtxRef.current = ctx
+        
+        // 尝试为Canvas 2D节点绑定鼠标事件（支持PC端鼠标签字）
+        // 微信小程序PC端和H5端，canvas node可能是真实DOM元素，支持addEventListener
+        try {
+          if (canvas.addEventListener) {
+            bindMouseEvents(canvas, ctx)
+            console.log('签字Canvas初始化成功（含鼠标事件）')
+          } else {
+            console.log('签字Canvas初始化成功（仅touch事件）')
+          }
+        } catch (e) {
+          console.log('签字Canvas鼠标事件绑定失败，仅支持touch', e)
+        }
+      })
     }, 300)
   }
 
@@ -610,28 +660,28 @@ const IndexPage = () => {
 
   const handleCanvasStart = (e: any) => {
     try {
+      console.log('Canvas touchStart事件触发', JSON.stringify(e.touches))
       isDrawingRef.current = true
-      const canvas = canvasNodeRef.current
-      if (!canvas) return
-      const ctx = canvas.getContext('2d')
+      const ctx = drawCtxRef.current || canvasNodeRef.current?.getContext('2d')
+      if (!ctx) { console.log('Canvas ctx为空'); return }
       const pos = getTouchPos(e)
-      if (!pos) return
+      if (!pos) { console.log('Canvas touch坐标为空'); return }
+      console.log('签字起始坐标', pos)
       ctx.beginPath()
       ctx.moveTo(pos.x, pos.y)
-    } catch (_) {}
+    } catch (err) { console.log('handleCanvasStart错误', err) }
   }
 
   const handleCanvasMove = (e: any) => {
     try {
       if (!isDrawingRef.current) return
-      const canvas = canvasNodeRef.current
-      if (!canvas) return
-      const ctx = canvas.getContext('2d')
+      const ctx = drawCtxRef.current || canvasNodeRef.current?.getContext('2d')
+      if (!ctx) return
       const pos = getTouchPos(e)
       if (!pos) return
       ctx.lineTo(pos.x, pos.y)
       ctx.stroke()
-    } catch (_) {}
+    } catch (err) { console.log('handleCanvasMove错误', err) }
   }
 
   const handleCanvasEnd = () => {
@@ -641,9 +691,9 @@ const IndexPage = () => {
   const handleClearSign = () => {
     try {
       const canvas = canvasNodeRef.current
-      if (canvas) {
-        const ctx = canvas.getContext('2d')
-        const dpr = Taro.getSystemInfoSync().pixelRatio
+      const ctx = drawCtxRef.current || canvas?.getContext('2d')
+      if (canvas && ctx) {
+        const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : Taro.getSystemInfoSync().pixelRatio
         ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
       }
     } catch (_) {}
@@ -1400,6 +1450,7 @@ const IndexPage = () => {
                 id={SIGNATURE_CANVAS_ID}
                 canvasId={SIGNATURE_CANVAS_ID}
                 type="2d"
+                disableScroll
                 style={{ width: '100%', height: '200px' }}
                 onTouchStart={handleCanvasStart}
                 onTouchMove={handleCanvasMove}
