@@ -314,6 +314,42 @@ const IndexPage = () => {
     try {
       let files: any[]
 
+      // 选择文件的辅助函数：优先 chooseMessageFile，降级到 input[type=file]
+      const pickFiles = async (extensions: string[]): Promise<any[]> => {
+        try {
+          const res = await Taro.chooseMessageFile({
+            count: config.maxCount - currentCount,
+            type: 'file',
+            extension: extensions,
+          })
+          return res.tempFiles
+        } catch (err: any) {
+          // chooseMessageFile 不可用（电脑端微信等），降级到 input[type=file]
+          console.log('chooseMessageFile失败，降级到input文件选择', err?.errMsg || err?.message || err)
+          return new Promise<any[]>((resolve, reject) => {
+            const input = document.createElement('input')
+            input.type = 'file'
+            input.accept = extensions.map(e => `.${e}`).join(',')
+            input.onchange = () => {
+              const fileList = input.files
+              if (!fileList || fileList.length === 0) {
+                reject(new Error('未选择文件'))
+                return
+              }
+              const result = Array.from(fileList).map(f => ({
+                path: URL.createObjectURL(f),
+                size: f.size,
+                name: f.name,
+                type: f.type,
+                rawFile: f,  // 保留原始 File 对象，用于 FormData 上传
+              }))
+              resolve(result)
+            }
+            input.click()
+          })
+        }
+      }
+
       if (config.accept === 'mixed') {
         // 混合模式：弹出选择菜单，让用户选"拍照/相册"或"选择PDF文件"
         const { tapIndex } = await Taro.showActionSheet({
@@ -329,12 +365,7 @@ const IndexPage = () => {
           files = res.tempFiles
         } else {
           // 选择PDF文件
-          const res = await Taro.chooseMessageFile({
-            count: config.maxCount - currentCount,
-            type: 'file',
-            extension: ['pdf'],
-          })
-          files = res.tempFiles
+          files = await pickFiles(['pdf'])
         }
       } else if (config.accept === 'image') {
         const res = await Taro.chooseImage({
@@ -345,12 +376,7 @@ const IndexPage = () => {
         files = res.tempFiles
       } else {
         // accept === 'file'：选择文件
-        const res = await Taro.chooseMessageFile({
-          count: config.maxCount - currentCount,
-          type: 'file',
-          extension: ['pdf', 'jpg', 'jpeg', 'png'],
-        })
-        files = res.tempFiles
+        files = await pickFiles(['pdf', 'jpg', 'jpeg', 'png'])
       }
 
       setIsUploading(true)
@@ -371,13 +397,28 @@ const IndexPage = () => {
             Taro.showToast({ title: 'AI校验中，请稍候...', icon: 'none', duration: 10000 })
           }
 
-          // 上传时传递 fileType、education 和 skipVerify 参数
-          const uploadRes = await Network.uploadFile({
-            url: `/api/hr/files/upload?fileType=${encodeURIComponent(fileType)}&education=${encodeURIComponent(education)}${skipVerify ? '&skipVerify=1' : ''}`,
-            filePath: file.path,
-            name: 'file',
-          })
-          const data = JSON.parse(uploadRes.data as string)
+          let uploadResData: any
+          // input[type=file] 降级场景：file 有 rawFile 属性（浏览器 File 对象）
+          if ((file as any).rawFile && typeof window !== 'undefined') {
+            // 直接用 FormData + fetch 上传，绕过 Taro uploadFile 对 blob URL 的不兼容
+            const formData = new FormData()
+            formData.append('file', (file as any).rawFile, file.name)
+            const baseUrl = (typeof PROJECT_DOMAIN !== 'undefined' ? PROJECT_DOMAIN : '') as string
+            const resp = await fetch(`${baseUrl}/api/hr/files/upload?fileType=${encodeURIComponent(fileType)}&education=${encodeURIComponent(education)}${skipVerify ? '&skipVerify=1' : ''}`, {
+              method: 'POST',
+              body: formData,
+            })
+            uploadResData = await resp.json()
+          } else {
+            // 正常场景：使用 Network.uploadFile
+            const uploadRes = await Network.uploadFile({
+              url: `/api/hr/files/upload?fileType=${encodeURIComponent(fileType)}&education=${encodeURIComponent(education)}${skipVerify ? '&skipVerify=1' : ''}`,
+              filePath: file.path,
+              name: 'file',
+            })
+            uploadResData = JSON.parse(uploadRes.data as string)
+          }
+          const data = uploadResData
           console.log('上传响应: code=', data.code)
 
           // 隐藏校验中的toast
@@ -521,6 +562,35 @@ const IndexPage = () => {
               ctx.lineWidth = 3
               ctx.lineCap = 'round'
               ctx.lineJoin = 'round'
+
+              // H5/电脑端：绑定鼠标事件到 canvas DOM 节点
+              if (typeof document !== 'undefined') {
+                const canvasEl = document.getElementById(SIGNATURE_CANVAS_ID)
+                if (canvasEl) {
+                  const getMousePos = (evt: MouseEvent) => {
+                    const rect = canvasEl.getBoundingClientRect()
+                    return { x: evt.clientX - rect.left, y: evt.clientY - rect.top }
+                  }
+                  canvasEl.addEventListener('mousedown', (evt: MouseEvent) => {
+                    isDrawingRef.current = true
+                    const pos = getMousePos(evt)
+                    ctx.beginPath()
+                    ctx.moveTo(pos.x, pos.y)
+                  })
+                  canvasEl.addEventListener('mousemove', (evt: MouseEvent) => {
+                    if (!isDrawingRef.current) return
+                    const pos = getMousePos(evt)
+                    ctx.lineTo(pos.x, pos.y)
+                    ctx.stroke()
+                  })
+                  canvasEl.addEventListener('mouseup', () => {
+                    isDrawingRef.current = false
+                  })
+                  canvasEl.addEventListener('mouseleave', () => {
+                    isDrawingRef.current = false
+                  })
+                }
+              }
             }
           }
         })
@@ -531,34 +601,44 @@ const IndexPage = () => {
     }, 300)
   }
 
-  const handleCanvasTouchStart = (e: any) => {
+  // 提取坐标：touch 事件提供 x/y
+  const getTouchPos = (e: any) => {
+    if (e.touches && e.touches.length > 0) {
+      return { x: e.touches[0].x, y: e.touches[0].y }
+    }
+    return null
+  }
+
+  const isDrawingRef = useRef(false)
+
+  const handleCanvasStart = (e: any) => {
     try {
-      const query = Taro.createSelectorQuery()
-      query.select(`#${SIGNATURE_CANVAS_ID}`).fields({ node: true, size: true }).exec((res) => {
-        if (res && res[0] && res[0].node) {
-          const canvas = res[0].node
-          const ctx = canvas.getContext('2d')
-          const touch = e.touches[0]
-          ctx.beginPath()
-          ctx.moveTo(touch.x, touch.y)
-        }
-      })
+      isDrawingRef.current = true
+      const canvas = canvasNodeRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      const pos = getTouchPos(e)
+      if (!pos) return
+      ctx.beginPath()
+      ctx.moveTo(pos.x, pos.y)
     } catch (_) {}
   }
 
-  const handleCanvasTouchMove = (e: any) => {
+  const handleCanvasMove = (e: any) => {
     try {
-      const query = Taro.createSelectorQuery()
-      query.select(`#${SIGNATURE_CANVAS_ID}`).fields({ node: true, size: true }).exec((res) => {
-        if (res && res[0] && res[0].node) {
-          const canvas = res[0].node
-          const ctx = canvas.getContext('2d')
-          const touch = e.touches[0]
-          ctx.lineTo(touch.x, touch.y)
-          ctx.stroke()
-        }
-      })
+      if (!isDrawingRef.current) return
+      const canvas = canvasNodeRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      const pos = getTouchPos(e)
+      if (!pos) return
+      ctx.lineTo(pos.x, pos.y)
+      ctx.stroke()
     } catch (_) {}
+  }
+
+  const handleCanvasEnd = () => {
+    isDrawingRef.current = false
   }
 
   const handleClearSign = () => {
@@ -1324,8 +1404,9 @@ const IndexPage = () => {
                 canvasId={SIGNATURE_CANVAS_ID}
                 type="2d"
                 style={{ width: '100%', height: '200px' }}
-                onTouchStart={handleCanvasTouchStart}
-                onTouchMove={handleCanvasTouchMove}
+                onTouchStart={handleCanvasStart}
+                onTouchMove={handleCanvasMove}
+                onTouchEnd={handleCanvasEnd}
               />
             </View>
             <Text className="block text-xs text-gray-400 text-center mb-4">请在上方区域手写签名</Text>
