@@ -74,4 +74,11 @@ export class RateLimiter {
 
     return false
   }
+
+  /**
+   * 重置某个 key 的限流计数（如登录成功后清除）
+   */
+  reset(key: string): void {
+    this.requests.delete(key)
+  }
 }

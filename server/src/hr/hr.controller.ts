@@ -57,10 +57,10 @@ export class HrController {
   @Post('auth/login')
   @HttpCode(200)
   async login(@Body() body: { username: string; password: string }, @Req() req: any) {
-    // 登录限流：每IP每5分钟最多5次失败尝试
+    // 登录限流：每IP每15分钟最多10次失败尝试
     const clientIp = this.getClientIp(req)
-    if (loginLimiter.isRateLimited(clientIp, 5, 5 * 60 * 1000)) {
-      throw new BadRequestException('登录尝试过于频繁，请5分钟后再试')
+    if (loginLimiter.isRateLimited(clientIp, 10, 15 * 60 * 1000)) {
+      throw new BadRequestException('登录尝试过于频繁，请15分钟后再试')
     }
 
     console.log('管理员登录请求:', maskSensitive(body.username))
@@ -75,6 +75,9 @@ export class HrController {
     }
 
     const token = await this.hrService.generateToken(admin)
+
+    // 登录成功，清除该IP的限流计数
+    loginLimiter.reset(clientIp)
 
     return {
       code: 200,
