@@ -19,6 +19,7 @@ interface EmployeeDetail {
     join_date: string | null
     hr_contact: string | null
     status: string
+    lock_source: string | null
     created_at: string
   }
   files: Array<{
@@ -300,6 +301,17 @@ const HrAdminPage = () => {
 
       if (res.data.code === 200) {
         setDetail(res.data.data)
+        // 进入查看模式，自动锁定
+        try {
+          await Network.request({
+            url: `/api/hr/employees/${employeeId}/enter-view`,
+            method: 'POST',
+            header: { Authorization: `Bearer ${token}` },
+          })
+          console.log('进入查看模式成功')
+        } catch (e) {
+          console.error('进入查看模式失败:', e)
+        }
       } else {
         Taro.showToast({ title: res.data.msg || '获取详情失败', icon: 'none' })
       }
@@ -309,6 +321,23 @@ const HrAdminPage = () => {
     } finally {
       setLoading(false)
     }
+  }
+
+  // 退出员工详情页（退出查看模式，自动解锁）
+  const exitDetailView = async () => {
+    if (detail) {
+      try {
+        await Network.request({
+          url: `/api/hr/employees/${detail.employee.id}/exit-view`,
+          method: 'POST',
+          header: { Authorization: `Bearer ${token}` },
+        })
+        console.log('退出查看模式成功')
+      } catch (e) {
+        console.error('退出查看模式失败:', e)
+      }
+    }
+    setDetail(null)
   }
 
   // 下载员工资料
@@ -560,7 +589,7 @@ const HrAdminPage = () => {
             {/* 顶部栏 */}
             <View className="bg-white border-b border-gray-200 p-4">
               <View className="flex items-center gap-3">
-                <View onClick={() => setDetail(null)}>
+                <View onClick={() => exitDetailView()}>
                   <ArrowLeft size={20} color="#374151" />
                 </View>
                 <Text className="block text-lg font-bold text-gray-900">{detail.employee.name} 的资料</Text>
@@ -602,6 +631,12 @@ const HrAdminPage = () => {
                     <View className="flex items-center gap-2">
                       <Text className="block text-sm text-gray-500 w-16">状态</Text>
                       {getStatusBadge(detail.employee.status)}
+                      {detail.employee.status === 'locked' && detail.employee.lock_source === 'auto' && (
+                        <Text className="block text-xs text-amber-600">查看中自动锁定</Text>
+                      )}
+                      {detail.employee.status === 'locked' && detail.employee.lock_source === 'manual' && (
+                        <Text className="block text-xs text-red-600">手动锁定</Text>
+                      )}
                     </View>
                   </View>
                 </CardContent>
@@ -730,11 +765,12 @@ const HrAdminPage = () => {
                   variant="outline"
                   onClick={() => {
                     setLockingEmployeeId(detail.employee.id)
-                    setLockingAction(detail.employee.status === 'locked' ? 'unlock' : 'lock')
+                    // manual锁定 -> 解锁(恢复auto); auto锁定或未锁定 -> 手动锁定
+                    setLockingAction(detail.employee.lock_source === 'manual' ? 'unlock' : 'lock')
                     setShowLockConfirm(true)
                   }}
                 >
-                  {detail.employee.status === 'locked' ? (
+                  {detail.employee.lock_source === 'manual' ? (
                     <>
                       <LockOpen size={16} color="#2563eb" className="mr-2" />
                       解锁资料
@@ -1041,20 +1077,20 @@ const HrAdminPage = () => {
         <View className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onClick={() => setShowLockConfirm(false)}>
           <View className="bg-white rounded-xl mx-8 p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation && e.stopPropagation()}>
             <View className="flex items-center gap-2 mb-3">
-              {detail.employee.status === 'locked' ? <LockOpen size={20} color="#16a34a" /> : <Lock size={20} color="#f59e0b" />}
+              {detail.employee.lock_source === 'manual' ? <LockOpen size={20} color="#16a34a" /> : <Lock size={20} color="#f59e0b" />}
               <Text className="block text-lg font-semibold text-gray-900">
-                {detail.employee.status === 'locked' ? '解锁资料' : '锁定资料'}
+                {detail.employee.lock_source === 'manual' ? '解锁资料' : '锁定资料'}
               </Text>
             </View>
             <Text className="block text-sm text-gray-600 mb-4">
-              {detail.employee.status === 'locked'
-                ? '解锁后该员工可以继续修改和提交资料，确定解锁？'
-                : '锁定后该员工将无法修改和提交资料，确定锁定？'}
+              {detail.employee.lock_source === 'manual'
+                ? '解锁后，退出查看时将自动解除锁定，该员工可继续修改资料。确认解锁？'
+                : '手动锁定后，即使退出查看，资料仍保持锁定状态，员工无法修改。确认锁定？'}
             </Text>
             <View className="flex gap-3">
               <Button className="flex-1" variant="outline" onClick={() => setShowLockConfirm(false)}>取消</Button>
               <Button className="flex-1" onClick={handleLockEmployee}>
-                {detail.employee.status === 'locked' ? '确认解锁' : '确认锁定'}
+                {detail.employee.lock_source === 'manual' ? '确认解锁' : '确认锁定'}
               </Button>
             </View>
           </View>

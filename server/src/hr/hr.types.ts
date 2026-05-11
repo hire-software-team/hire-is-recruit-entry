@@ -5,7 +5,12 @@ export interface Employee {
   phone: string
   education: string | null
   join_date: string | null
+  hr_contact: string | null
   status: string
+  viewing_count: number
+  lock_source: string | null
+  locked_by: number | null
+  locked_at: string | null
   created_at: string
 }
 

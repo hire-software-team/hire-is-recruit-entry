@@ -277,7 +277,20 @@ export class HrController {
     if (existing) {
       // 已锁定，不允许修改
       if (existing.employee.status === 'locked') {
-        throw new ForbiddenException('资料已被锁定，无法修改')
+        const lockSource = existing.employee.lock_source || 'manual'
+        const msg = lockSource === 'auto'
+          ? '资料正在被管理员查看，暂时无法修改'
+          : '资料已被管理员锁定，无法修改'
+        throw new ForbiddenException(msg)
+      }
+      // 再次检查（getEmployeeStatus会自动清理过期锁定）
+      // 再次检查
+      const recheck = await this.hrService.getEmployeeStatus(body.phone)
+      if (recheck.locked) {
+        const msg = recheck.lockSource === 'auto'
+          ? '资料正在被管理员查看，暂时无法修改'
+          : '资料已被管理员锁定，无法修改'
+        throw new ForbiddenException(msg)
       }
       // 未锁定，执行更新
       const employee = await this.hrService.createEmployee({
@@ -394,9 +407,10 @@ export class HrController {
     if (!status.submitted) {
       return { code: 200, data: [] }
     }
-    if (status.locked) {
+    if (status.locked && status.lockSource === 'manual') {
       throw new ForbiddenException('资料已被锁定，无法查看')
     }
+    // auto锁定（管理员正在查看）时允许获取文件列表，但提交时会被拒绝
     const files = await this.hrService.getEmployeeOwnFiles(status.employeeId!)
     return { code: 200, data: files }
   }
@@ -536,6 +550,12 @@ export class HrController {
       throw new ForbiddenException('无权删除该员工资料')
     }
 
+    // 检查是否正在被管理员查看
+    const viewingCount = await this.hrService.getViewingCount(Number(id))
+    if (viewingCount > 0) {
+      throw new ForbiddenException('该资料正在被管理员查看，请稍后再试')
+    }
+
     try {
       await this.hrService.deleteEmployee(Number(id))
       return {
@@ -549,14 +569,52 @@ export class HrController {
   }
 
   /**
+   * 管理员进入员工详情页（自动锁定）
+   */
+  @Post('employees/:id/enter-view')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  async enterView(@Param('id') id: string, @Req() req: any) {
+    const { role, hrContacts, adminId } = req.user
+    const inScope = await this.hrService.isEmployeeInScope(Number(id), role, hrContacts)
+    if (!inScope) {
+      throw new ForbiddenException('无权查看该员工资料')
+    }
+
+    try {
+      const result = await this.hrService.enterView(Number(id), adminId)
+      return { code: 200, msg: '进入查看', data: result }
+    } catch (error: any) {
+      throw new BadRequestException(error.message || '操作失败')
+    }
+  }
+
+  /**
+   * 管理员退出员工详情页（自动解锁）
+   */
+  @Post('employees/:id/exit-view')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  async exitView(@Param('id') id: string, @Req() req: any) {
+    const { adminId } = req.user
+
+    try {
+      const result = await this.hrService.exitView(Number(id), adminId)
+      return { code: 200, msg: '退出查看', data: result }
+    } catch (error: any) {
+      throw new BadRequestException(error.message || '操作失败')
+    }
+  }
+
+  /**
    * 锁定/解锁员工资料（管理员，JWT 鉴权）
    */
   @Post('employees/:id/lock')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(200)
-  async toggleEmployeeLock(@Param('id') id: string, @Req() req: any) {
-    console.log('管理员切换员工锁定状态:', id)
-    const { role, hrContacts } = req.user
+  async toggleEmployeeLock(@Param('id') id: string, @Req() req: any, @Body() body: { action?: string }) {
+    console.log('管理员切换员工锁定状态:', id, 'action:', body.action)
+    const { role, hrContacts, adminId } = req.user
 
     // level3 无权锁定/解锁
     if (role === 'level3') {
@@ -570,7 +628,8 @@ export class HrController {
     }
 
     try {
-      const result = await this.hrService.toggleEmployeeLock(Number(id))
+      const action = body.action || 'lock'
+      const result = await this.hrService.setEmployeeLock(Number(id), action, adminId)
       return {
         code: 200,
         msg: result.status === 'locked' ? '锁定成功' : '解锁成功',

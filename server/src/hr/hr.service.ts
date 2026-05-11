@@ -264,10 +264,13 @@ export class HrService {
   /**
    * 切换员工锁定状态
    */
-  async toggleEmployeeLock(id: number): Promise<{ status: string }> {
+  async setEmployeeLock(id: number, action: string, adminId: number): Promise<{ status: string; lockSource: string }> {
+    // 先清理过期的自动锁定
+    await this.cleanupExpiredViewers(id)
+
     const { data: employee, error: empError } = await this.supabase
       .from('employees')
-      .select('id, status')
+      .select('id, status, lock_source')
       .eq('id', id)
       .single()
 
@@ -275,32 +278,68 @@ export class HrService {
       throw new Error('员工不存在')
     }
 
-    const newStatus = employee.status === 'locked' ? 'submitted' : 'locked'
+    let newStatus: string
+    let newLockSource: string | null
+
+    if (action === 'unlock') {
+      // 手动解锁：设为auto（退出时自动解锁）
+      newStatus = employee.status // 保持当前状态
+      newLockSource = 'auto' // 退出时如果viewing_count=0则解锁
+      // 如果当前没人查看，直接解锁
+      const { data: viewers } = await this.supabase
+        .from('employee_viewers')
+        .select('admin_id')
+        .eq('employee_id', id)
+      if (!viewers || viewers.length === 0) {
+        newStatus = 'submitted'
+        newLockSource = null
+      }
+    } else {
+      // 锁定：手动锁定
+      newStatus = 'locked'
+      newLockSource = 'manual'
+    }
 
     const { error: updateError } = await this.supabase
       .from('employees')
-      .update({ status: newStatus })
+      .update({
+        status: newStatus,
+        lock_source: newLockSource,
+        locked_by: newStatus === 'locked' ? adminId : null,
+        locked_at: newStatus === 'locked' ? new Date().toISOString() : null,
+      })
       .eq('id', id)
 
     if (updateError) {
       throw new Error(`更新状态失败: ${updateError.message}`)
     }
 
-    console.log(`员工 ${id} 状态已切换为: ${newStatus}`)
-    return { status: newStatus }
+    console.log(`员工 ${id} 锁定操作: action=${action}, status=${newStatus}, lock_source=${newLockSource}`)
+    return { status: newStatus, lockSource: newLockSource || '' }
   }
 
   /**
    * 查询员工资料状态（通过手机号，无需鉴权）
    */
-  async getEmployeeStatus(phone: string): Promise<{ submitted: boolean; locked: boolean; employeeId?: number }> {
+  async getEmployeeStatus(phone: string): Promise<{ submitted: boolean; locked: boolean; lockSource?: string; employeeId?: number }> {
     const result = await this.lookupByPhone(phone)
     if (!result) {
       return { submitted: false, locked: false }
     }
+    // 先清理过期的自动锁定
+    await this.cleanupExpiredViewers(result.employee.id)
+
+    // 重新读取状态（cleanup可能已更新）
+    const { data: emp } = await this.supabase
+      .from('employees')
+      .select('status, lock_source')
+      .eq('id', result.employee.id)
+      .maybeSingle()
+
     return {
       submitted: true,
-      locked: result.employee.status === 'locked',
+      locked: emp?.status === 'locked',
+      lockSource: emp?.lock_source || undefined,
       employeeId: result.employee.id,
     }
   }
@@ -939,5 +978,164 @@ export class HrService {
       .maybeSingle()
     if (!data) return false
     return hrContacts.includes(data.hr_contact)
+  }
+
+  /** 获取员工的viewing_count */
+  async getViewingCount(employeeId: number): Promise<number> {
+    await this.cleanupExpiredViewers(employeeId)
+    const { data: emp } = await this.supabase
+      .from('employees')
+      .select('viewing_count')
+      .eq('id', employeeId)
+      .maybeSingle()
+    return emp?.viewing_count || 0
+  }
+
+  /** 管理员进入详情页 */
+  // ========== 查看锁定机制 ==========
+
+  /** 被动清理过期的viewer记录，重算viewing_count，必要时解锁 */
+  private async cleanupExpiredViewers(employeeId: number): Promise<number> {
+    // 1. 删除超过30分钟的viewer记录
+    await this.supabase
+      .from('employee_viewers')
+      .delete()
+      .eq('employee_id', employeeId)
+      .lt('entered_at', new Date(Date.now() - 30 * 60 * 1000).toISOString())
+
+    // 2. 重算viewing_count
+    const { count } = await this.supabase
+      .from('employee_viewers')
+      .select('*', { count: 'exact', head: true })
+      .eq('employee_id', employeeId)
+
+    const viewingCount = count || 0
+
+    // 3. 如果count=0且lock_source=auto，则解锁
+    const { data: emp } = await this.supabase
+      .from('employees')
+      .select('lock_source, status')
+      .eq('id', employeeId)
+      .maybeSingle()
+
+    if (viewingCount === 0 && emp?.lock_source === 'auto' && emp?.status === 'locked') {
+      await this.supabase
+        .from('employees')
+        .update({ status: 'submitted', lock_source: null, locked_by: null, locked_at: null, viewing_count: 0 })
+        .eq('id', employeeId)
+    } else {
+      await this.supabase
+        .from('employees')
+        .update({ viewing_count: viewingCount })
+        .eq('id', employeeId)
+    }
+
+    return viewingCount
+  }
+
+  /** 管理员进入详情页 */
+  async enterView(employeeId: number, adminId: number): Promise<{ viewingCount: number; lockSource: string | null }> {
+    // 先清理过期记录
+    await this.cleanupExpiredViewers(employeeId)
+
+    // 去重：同一管理员对同一员工只算一次
+    const { data: existing } = await this.supabase
+      .from('employee_viewers')
+      .select('admin_id')
+      .eq('employee_id', employeeId)
+      .eq('admin_id', adminId)
+      .maybeSingle()
+
+    if (!existing) {
+      // 插入viewer记录
+      await this.supabase
+        .from('employee_viewers')
+        .insert({ employee_id: employeeId, admin_id: adminId })
+    }
+
+    // 重算viewing_count
+    const { count } = await this.supabase
+      .from('employee_viewers')
+      .select('*', { count: 'exact', head: true })
+      .eq('employee_id', employeeId)
+
+    const viewingCount = count || 0
+
+    // 如果之前未锁定，自动锁定
+    const { data: emp } = await this.supabase
+      .from('employees')
+      .select('status, lock_source')
+      .eq('id', employeeId)
+      .maybeSingle()
+
+    if (emp?.status === 'submitted') {
+      await this.supabase
+        .from('employees')
+        .update({
+          status: 'locked',
+          lock_source: 'auto',
+          locked_at: new Date().toISOString(),
+          viewing_count: viewingCount,
+        })
+        .eq('id', employeeId)
+      return { viewingCount, lockSource: 'auto' }
+    }
+
+    // 已锁定，更新viewing_count
+    await this.supabase
+      .from('employees')
+      .update({ viewing_count: viewingCount })
+      .eq('id', employeeId)
+
+    return { viewingCount, lockSource: emp?.lock_source || null }
+  }
+
+  /** 管理员退出详情页 */
+  async exitView(employeeId: number, adminId: number): Promise<{ viewingCount: number; unlocked: boolean }> {
+    // 删除viewer记录
+    await this.supabase
+      .from('employee_viewers')
+      .delete()
+      .eq('employee_id', employeeId)
+      .eq('admin_id', adminId)
+
+    // 清理过期 + 重算count
+    const viewingCount = await this.cleanupExpiredViewers(employeeId)
+
+    // 如果count=0且lock_source=auto，cleanupExpiredViewers已经解锁了
+    const { data: emp } = await this.supabase
+      .from('employees')
+      .select('status, lock_source')
+      .eq('id', employeeId)
+      .maybeSingle()
+
+    const unlocked = viewingCount === 0 && emp?.lock_source !== 'manual' && emp?.status === 'submitted'
+
+    return { viewingCount, unlocked }
+  }
+
+  /** 修改lock_source（管理员在详情页内点锁定/解锁） */
+  async setLockSource(employeeId: number, lockSource: 'manual' | 'auto', adminId: number): Promise<void> {
+    const updates: Record<string, unknown> = { lock_source: lockSource }
+    if (lockSource === 'manual') {
+      updates.locked_by = adminId
+    } else {
+      updates.locked_by = null
+    }
+    await this.supabase
+      .from('employees')
+      .update(updates)
+      .eq('id', employeeId)
+  }
+
+  /** 检查员工是否正在被管理员查看 */
+  async isBeingViewed(employeeId: number): Promise<boolean> {
+    await this.cleanupExpiredViewers(employeeId)
+    const { data: emp } = await this.supabase
+      .from('employees')
+      .select('viewing_count')
+      .eq('id', employeeId)
+      .maybeSingle()
+    return (emp?.viewing_count || 0) > 0
   }
 }

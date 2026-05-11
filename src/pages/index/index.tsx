@@ -151,6 +151,7 @@ const IndexPage = () => {
 
   // 锁定状态
   const [isLocked, setIsLocked] = useState(false)
+  const [lockSource, setLockSource] = useState<string | null>(null)
 
   // 草稿缓存 Key
   const DRAFT_KEY = 'hrDraft'
@@ -228,6 +229,7 @@ const IndexPage = () => {
               })
               if (res?.data?.data?.locked) {
                 setIsLocked(true)
+                setLockSource(res.data.data.lockSource || null)
               }
             } catch (e) {
               console.error('查询锁定状态失败:', e)
@@ -809,7 +811,11 @@ const IndexPage = () => {
         const statusData = statusRes.data?.data || statusRes.data
         if (statusData?.locked) {
           setIsLocked(true)
-          Taro.showToast({ title: '资料已被锁定，无法修改', icon: 'none', duration: 3000 })
+          setLockSource(statusData.lockSource || null)
+          const lockMsg = statusData.lockSource === 'auto'
+            ? '资料正在被管理员查看，暂时无法修改'
+            : '资料已被管理员锁定，无法修改'
+          Taro.showToast({ title: lockMsg, icon: 'none', duration: 3000 })
           return
         }
       } catch (_) { /* 查询失败不阻塞提交，由后端兜底校验 */ }
@@ -879,6 +885,12 @@ const IndexPage = () => {
       // 如果后端返回 403（锁定），同步更新前端锁定状态
       if (errData?.statusCode === 403 || error?.statusCode === 403) {
         setIsLocked(true)
+        // 根据错误消息推断锁定来源
+        if (errMsg.includes('查看')) {
+          setLockSource('auto')
+        } else {
+          setLockSource('manual')
+        }
       }
       Taro.showToast({ title: errMsg, icon: 'none', duration: 3000 })
     } finally {
@@ -1054,9 +1066,15 @@ const IndexPage = () => {
                 <Lock size={24} color="#dc2626" />
                 <View className="flex-1">
                   <Text className="block text-base font-semibold text-red-800">资料已锁定</Text>
-                  <Text className="block text-sm text-red-600">资料已被管理员锁定，无法修改</Text>
+                  <Text className="block text-sm text-red-600">
+                    {lockSource === 'auto'
+                      ? '资料正在被管理员查看，暂时无法修改'
+                      : '资料已被管理员锁定，无法修改'}
+                  </Text>
                 </View>
-                <Badge className="bg-red-100 text-red-700">已锁定</Badge>
+                <Badge className="bg-red-100 text-red-700">
+                  {lockSource === 'auto' ? '查看中' : '已锁定'}
+                </Badge>
               </>
             ) : (
               <>
@@ -1087,8 +1105,12 @@ const IndexPage = () => {
                 // 检查是否已被锁定
                 if (statusData?.locked) {
                   setIsLocked(true)
+                  setLockSource(statusData.lockSource || null)
                   Taro.hideLoading()
-                  Taro.showToast({ title: '资料已被锁定，无法修改', icon: 'none', duration: 3000 })
+                  const lockMsg = statusData.lockSource === 'auto'
+                    ? '资料正在被管理员查看，暂时无法修改'
+                    : '资料已被管理员锁定，无法修改'
+                  Taro.showToast({ title: lockMsg, icon: 'none', duration: 3000 })
                   return
                 }
                 if (statusData?.employeeId) {
