@@ -744,8 +744,8 @@ export class HrService {
 
     // 验证当前密码
     const { data: admin, error } = await this.supabase
-      .from('admin_users')
-      .select('id, password')
+      .from('hr_admins')
+      .select('id, password_hash')
       .eq('id', userId)
       .maybeSingle()
 
@@ -753,14 +753,8 @@ export class HrService {
       throw new Error('用户不存在')
     }
 
-    // 比对当前密码
-    const isBcryptHash = admin.password.startsWith('$2a$') || admin.password.startsWith('$2b$')
-    let isValid = false
-    if (isBcryptHash) {
-      isValid = await bcrypt.compare(currentPassword, admin.password)
-    } else {
-      isValid = admin.password === currentPassword
-    }
+    // 比对当前密码（hr_admins 表始终使用 bcrypt 哈希）
+    const isValid = await bcrypt.compare(currentPassword, admin.password_hash)
 
     if (!isValid) {
       throw new Error('当前密码错误')
