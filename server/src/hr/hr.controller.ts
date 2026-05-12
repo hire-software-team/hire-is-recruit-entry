@@ -6,6 +6,7 @@ import { HrCleanupService } from './hr-cleanup.service'
 import { StorageService } from '../storage/storage.service'
 import { AuthGuard } from '@nestjs/passport'
 import { RateLimiter, maskSensitive } from './hr.utils'
+import { getSupabaseClient } from '../storage/database/supabase-client'
 import * as archiver from 'archiver'
 
 // 限流器实例
@@ -383,6 +384,45 @@ export class HrController {
   /**
    * 查询员工资料状态（通过手机号，无需鉴权）
    */
+  /**
+   * 文件代理接口：通过文件ID代理访问Storage中的文件
+   * 用于签名URL失败时的降级方案，前端直接用此URL作为图片src
+   */
+  @Get('files/:fileId/proxy')
+  async proxyFile(@Param('fileId') fileId: string, @Res() res: Response) {
+    const fileIdNum = parseInt(fileId, 10)
+    if (isNaN(fileIdNum)) {
+      throw new BadRequestException('无效的文件ID')
+    }
+
+    // 从数据库获取文件信息
+    const supabase = getSupabaseClient()
+    const { data: fileData, error } = await supabase
+      .from('employee_files')
+      .select('file_key, file_type_ext, file_name')
+      .eq('id', fileIdNum)
+      .single()
+
+    if (error || !fileData) {
+      throw new NotFoundException('文件不存在')
+    }
+
+    try {
+      const buffer = await this.storageService.downloadFile(fileData.file_key)
+
+      // 根据 MIME 类型设置 Content-Type
+      const contentType = fileData.file_type_ext || 'application/octet-stream'
+      res.setHeader('Content-Type', contentType)
+      res.setHeader('Content-Length', buffer.length)
+      // 缓存5分钟
+      res.setHeader('Cache-Control', 'public, max-age=300')
+      res.send(buffer)
+    } catch (err) {
+      console.error('代理文件下载失败:', err)
+      throw new NotFoundException('文件下载失败')
+    }
+  }
+
   @Get('employees/status')
   async getEmployeeStatus(@Query('phone') phone: string) {
     if (!phone) {

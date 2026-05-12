@@ -11,7 +11,17 @@ export class StorageService {
   async uploadFile(buffer: Buffer, filename: string, mimetype: string): Promise<{ key: string; url: string }> {
     const timestamp = Date.now()
     const random = Math.random().toString(36).substring(2, 9)
-    const ext = filename.split('.').pop()
+    // 从文件名提取扩展名，如果文件名无扩展名则从MIME类型推导
+    const filenameParts = filename.split('.')
+    const extFromName = filenameParts.length > 1 ? filenameParts.pop() : ''
+    const MIME_TO_EXT: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'application/pdf': 'pdf',
+    }
+    const ext = extFromName && extFromName.length <= 5 ? extFromName : (MIME_TO_EXT[mimetype] || 'bin')
     const key = `hr-files/${timestamp}-${random}.${ext}`
 
     console.log('开始上传文件到 Supabase Storage:', { key, filename, mimetype })
