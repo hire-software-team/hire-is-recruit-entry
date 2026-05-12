@@ -532,9 +532,21 @@ export class HrService {
       phone: maskPhone((employee as Employee).phone),
     }
 
+    // 为每个文件生成签名URL
+    const fileList = (files as EmployeeFile[]) || []
+    const filesWithUrl = await Promise.all(
+      fileList.map(async (f) => {
+        const signedUrl = await this.storageService.getSignedUrl(f.file_key, 300) // 5分钟有效
+        return {
+          ...f,
+          signed_url: signedUrl,
+        }
+      })
+    )
+
     return {
       employee: maskedEmployee,
-      files: (files as EmployeeFile[]) || [],
+      files: filesWithUrl,
     }
   }
 
