@@ -991,6 +991,53 @@ export class HrService {
     return emp?.viewing_count || 0
   }
 
+  /** 检查删除时是否只有当前管理员自己在查看，如果是则清理自己的viewer记录并允许删除 */
+  async canDeleteWhileViewing(employeeId: number, adminId: number): Promise<boolean> {
+    await this.cleanupExpiredViewers(employeeId)
+
+    // 查询当前所有viewer
+    const { data: viewers } = await this.supabase
+      .from('employee_viewers')
+      .select('admin_id')
+      .eq('employee_id', employeeId)
+
+    if (!viewers || viewers.length === 0) {
+      return true
+    }
+
+    // 只有自己一个人在查看，清理自己的viewer记录后允许删除
+    if (viewers.length === 1 && viewers[0].admin_id === adminId) {
+      await this.supabase
+        .from('employee_viewers')
+        .delete()
+        .eq('employee_id', employeeId)
+        .eq('admin_id', adminId)
+
+      // 重置viewing_count，如果是auto锁定则解锁
+      const { data: emp } = await this.supabase
+        .from('employees')
+        .select('lock_source, status')
+        .eq('id', employeeId)
+        .maybeSingle()
+
+      if (emp?.lock_source === 'auto' && emp?.status === 'locked') {
+        await this.supabase
+          .from('employees')
+          .update({ status: 'submitted', lock_source: null, locked_by: null, locked_at: null, viewing_count: 0 })
+          .eq('id', employeeId)
+      } else {
+        await this.supabase
+          .from('employees')
+          .update({ viewing_count: 0 })
+          .eq('id', employeeId)
+      }
+      return true
+    }
+
+    // 有其他管理员在查看，不允许删除
+    return false
+  }
+
   /** 管理员进入详情页 */
   // ========== 查看锁定机制 ==========
 

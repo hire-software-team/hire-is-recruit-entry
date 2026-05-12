@@ -550,10 +550,11 @@ export class HrController {
       throw new ForbiddenException('无权删除该员工资料')
     }
 
-    // 检查是否正在被管理员查看
-    const viewingCount = await this.hrService.getViewingCount(Number(id))
-    if (viewingCount > 0) {
-      throw new ForbiddenException('该资料正在被管理员查看，请稍后再试')
+    // 检查是否正在被其他管理员查看
+    const adminId = req.user.adminId || req.user.userId
+    const canDelete = await this.hrService.canDeleteWhileViewing(Number(id), adminId)
+    if (!canDelete) {
+      throw new ForbiddenException('该资料正在被其他管理员查看，请稍后再试')
     }
 
     try {
