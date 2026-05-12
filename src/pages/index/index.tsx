@@ -950,7 +950,7 @@ const IndexPage = () => {
               className="relative"
               onClick={() => previewImage(file.filePath!)}
             >
-              <Image src={file.filePath} mode="aspectFill" style={{ width: '100%', height: '200rpx' }} />
+              <Image src={file.filePath} mode="aspectFill" style={{ width: '100%', height: '200rpx' }} onError={() => {}} />
               {verifyResult?.verified && (
                 <View className="absolute top-1 left-1">
                   <CircleCheck size={16} color="#16a34a" />
@@ -1223,7 +1223,7 @@ const IndexPage = () => {
                               className="border border-gray-200 rounded overflow-hidden flex-shrink-0"
                               onClick={() => file.filePath && Taro.previewImage({ current: file.filePath, urls: allImageUrls })}
                             >
-                              <Image src={file.filePath} mode="aspectFill" style={{ width: '120rpx', height: '120rpx' }} />
+                              <Image src={file.filePath} mode="aspectFill" style={{ width: '120rpx', height: '120rpx' }} onError={() => {}} />
                             </View>
                           ) : (
                             <View className="flex-shrink-0 p-2 bg-white rounded border border-gray-200">
@@ -1364,7 +1364,7 @@ const IndexPage = () => {
                           className="border border-gray-200 rounded overflow-hidden flex-shrink-0"
                           onClick={() => previewImage(file.filePath!)}
                         >
-                          <Image src={file.filePath} mode="aspectFill" style={{ width: '96rpx', height: '96rpx' }} />
+                          <Image src={file.filePath} mode="aspectFill" style={{ width: '96rpx', height: '96rpx' }} onError={() => {}} />
                         </View>
                       ) : (
                         <View className="flex-shrink-0 p-2 bg-white rounded border border-gray-200">
@@ -1425,7 +1425,7 @@ const IndexPage = () => {
           {signatureFile ? (
             <View className="border border-gray-200 rounded-lg p-3">
               <Text className="block text-sm text-gray-500 mb-2">已签字：</Text>
-              <Image src={signatureFile.filePath} mode="widthFix" className="w-full" style={{ maxHeight: '120px' }} />
+              <Image src={signatureFile.filePath} mode="widthFix" className="w-full" style={{ maxHeight: '120px' }} onError={() => {}} />
               <View className="mt-2">
                 <Button size="sm" variant="outline" onClick={handleResign}>重新签字</Button>
               </View>

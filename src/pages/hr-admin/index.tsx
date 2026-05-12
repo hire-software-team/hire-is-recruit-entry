@@ -729,7 +729,7 @@ const HrAdminPage = () => {
                                 onClick={() => isImage && previewImage(file.signed_url || file.url, allImageUrls)}
                               >
                                 {isImage ? (
-                                  <Image src={file.signed_url || file.url} mode="aspectFill" style={{ width: '100%', height: '200rpx' }} />
+                                  <Image src={file.signed_url || file.url} mode="aspectFill" style={{ width: '100%', height: '200rpx' }} onError={() => {}} />
                                 ) : (
                                   <View className="p-3 flex flex-col items-center justify-center" style={{ minHeight: '160rpx' }}>
                                     <FileText size={24} color="#6b7280" />
@@ -764,7 +764,7 @@ const HrAdminPage = () => {
                                     className="border border-gray-200 rounded overflow-hidden flex-shrink-0"
                                     onClick={() => previewImage(file.signed_url || file.url, allImageUrls)}
                                   >
-                                    <Image src={file.signed_url || file.url} mode="aspectFill" style={{ width: '120rpx', height: '120rpx' }} />
+                                    <Image src={file.signed_url || file.url} mode="aspectFill" style={{ width: '120rpx', height: '120rpx' }} onError={() => {}} />
                                   </View>
                                 ) : (
                                   <View className="flex-shrink-0 p-2 bg-white rounded border border-gray-200">
