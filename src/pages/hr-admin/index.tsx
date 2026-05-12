@@ -219,7 +219,8 @@ const HrAdminPage = () => {
         Taro.showToast({ title: res.data.msg || '删除失败', icon: 'none' })
       }
     } catch (error: any) {
-      Taro.showToast({ title: error.message || '删除失败', icon: 'none' })
+      const msg = error?.data?.message || error?.data?.msg || error?.message || '删除失败'
+      Taro.showToast({ title: msg, icon: 'none' })
     } finally {
       setLoading(false)
     }
