@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Upload, Settings, ImagePlus, FileText, Trash2, CircleCheck, Eye, Phone, Calendar, User, Users, GraduationCap, LoaderCircle, Lock, PenLine } from 'lucide-react-taro'
 
+const isH5 = typeof window !== 'undefined' && typeof document !== 'undefined'
+
 interface FileInfo {
   fileType: string
   fileName: string
@@ -365,6 +367,24 @@ const IndexPage = () => {
             sourceType: ['album', 'camera'],
           })
           files = res.tempFiles
+          // H5端：blob URL没有文件名信息，需要获取原始File对象以便FormData上传
+          if (isH5) {
+            for (const f of files) {
+              if (!(f as any).rawFile && f.path && f.path.startsWith('blob:')) {
+                try {
+                  const blob = await fetch(f.path).then(r => r.blob())
+                  const ext = f.type ? f.type.split('/').pop() || 'jpg' : 'jpg'
+                  const rawFile = new File([blob], f.name || `image.${ext}`, { type: f.type || 'image/jpeg' })
+                  ;(f as any).rawFile = rawFile
+                  if (!f.name || !f.name.includes('.')) {
+                    f.name = rawFile.name
+                  }
+                } catch (e) {
+                  console.log('H5获取原始File对象失败:', e)
+                }
+              }
+            }
+          }
         } else {
           // 选择PDF文件
           files = await pickFiles(['pdf'])
@@ -376,6 +396,24 @@ const IndexPage = () => {
           sourceType: ['album', 'camera'],
         })
         files = res.tempFiles
+        // H5端：blob URL没有文件名信息，需要获取原始File对象以便FormData上传
+        if (isH5) {
+          for (const f of files) {
+            if (!(f as any).rawFile && f.path && f.path.startsWith('blob:')) {
+              try {
+                const blob = await fetch(f.path).then(r => r.blob())
+                const ext = f.type ? f.type.split('/').pop() || 'jpg' : 'jpg'
+                const rawFile = new File([blob], f.name || `image.${ext}`, { type: f.type || 'image/jpeg' })
+                ;(f as any).rawFile = rawFile
+                if (!f.name || !f.name.includes('.')) {
+                  f.name = rawFile.name
+                }
+              } catch (e) {
+                console.log('H5获取原始File对象失败:', e)
+              }
+            }
+          }
+        }
       } else {
         // accept === 'file'：选择文件
         files = await pickFiles(['pdf', 'jpg', 'jpeg', 'png'])
@@ -590,7 +628,6 @@ const IndexPage = () => {
     setShowSignDialog(true)
     // 延迟初始化画布，确保DOM已渲染
     setTimeout(() => {
-      const isH5 = typeof window !== 'undefined' && typeof document !== 'undefined'
       
       // 统一使用 SelectorQuery 获取 Canvas 2D 节点
       const query = Taro.createSelectorQuery()
