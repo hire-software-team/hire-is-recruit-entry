@@ -152,7 +152,7 @@ const HrAdminPage = () => {
         Taro.showToast({ title: '登录成功', icon: 'success' })
         loadEmployeeList(res.data.data.token)
       } else {
-        Taro.showToast({ title: res.data.msg || '登录失败', icon: 'none' })
+        Taro.showToast({ title: res.data.message || res.data.msg || '登录失败', icon: 'none' })
       }
     } catch (error: any) {
       console.error('登录失败:', error)
@@ -191,7 +191,7 @@ const HrAdminPage = () => {
         setNewPwd('')
         setConfirmPwd('')
       } else {
-        Taro.showToast({ title: res.data.msg || '修改失败', icon: 'none' })
+        Taro.showToast({ title: res.data.message || res.data.msg || '修改失败', icon: 'none' })
       }
     } catch (error: any) {
       Taro.showToast({ title: error.message || '修改失败', icon: 'none' })
@@ -216,7 +216,7 @@ const HrAdminPage = () => {
         setDetail(null)
         loadEmployeeList()
       } else {
-        Taro.showToast({ title: res.data.msg || '删除失败', icon: 'none' })
+        Taro.showToast({ title: res.data.message || res.data.msg || '删除失败', icon: 'none' })
       }
     } catch (error: any) {
       const msg = error?.data?.message || error?.data?.msg || error?.message || '删除失败'
@@ -253,7 +253,7 @@ const HrAdminPage = () => {
         }
         loadEmployeeList()
       } else {
-        Taro.showToast({ title: res.data.msg || '操作失败', icon: 'none' })
+        Taro.showToast({ title: res.data.message || res.data.msg || '操作失败', icon: 'none' })
       }
     } catch (error: any) {
       Taro.showToast({ title: error.message || '操作失败', icon: 'none' })
@@ -278,7 +278,7 @@ const HrAdminPage = () => {
       if (res.data.code === 200) {
         setEmployees(res.data.data.employees || [])
       } else {
-        Taro.showToast({ title: res.data.msg || '加载失败', icon: 'none' })
+        Taro.showToast({ title: res.data.message || res.data.msg || '加载失败', icon: 'none' })
       }
     } catch (error: any) {
       console.error('加载员工列表失败:', error)
@@ -315,11 +315,19 @@ const HrAdminPage = () => {
           console.error('进入查看模式失败:', e)
         }
       } else {
-        Taro.showToast({ title: res.data.msg || '获取详情失败', icon: 'none' })
+        const errMsg = res.data.message || res.data.msg || '获取详情失败'
+        const isNotFound = res.statusCode === 404 || errMsg.includes('不存在')
+        Taro.showToast({ title: isNotFound ? '资料已被其他管理员删除' : errMsg, icon: 'none' })
+        if (isNotFound) {
+          loadEmployeeList()
+        }
       }
     } catch (error: any) {
       console.error('获取员工详情失败:', error)
-      Taro.showToast({ title: '获取详情失败', icon: 'none' })
+      const errMsg2 = error?.data?.message || error?.data?.msg || error?.message || ''
+      const isNotFound2 = errMsg2.includes('不存在') || error?.statusCode === 404
+      Taro.showToast({ title: isNotFound2 ? '资料已被其他管理员删除' : '获取详情失败', icon: 'none' })
+      loadEmployeeList()
     } finally {
       setLoading(false)
     }
@@ -521,7 +529,7 @@ const HrAdminPage = () => {
       if (res.data.code === 200) {
         setAdminList(res.data.data || [])
       } else {
-        Taro.showToast({ title: res.data.msg || '加载失败', icon: 'none' })
+        Taro.showToast({ title: res.data.message || res.data.msg || '加载失败', icon: 'none' })
       }
     } catch (error: any) {
       Taro.showToast({ title: '加载管理员列表失败', icon: 'none' })
@@ -565,7 +573,7 @@ const HrAdminPage = () => {
         setNewAdminHrContacts([])
         loadAdminList()
       } else {
-        Taro.showToast({ title: res.data.msg || '创建失败', icon: 'none' })
+        Taro.showToast({ title: res.data.message || res.data.msg || '创建失败', icon: 'none' })
       }
     } catch (error: any) {
       const msg = error?.data?.message || error?.data?.msg || '创建失败'
@@ -587,7 +595,7 @@ const HrAdminPage = () => {
         setDeleteAdminId(null)
         loadAdminList()
       } else {
-        Taro.showToast({ title: res.data.msg || '删除失败', icon: 'none' })
+        Taro.showToast({ title: res.data.message || res.data.msg || '删除失败', icon: 'none' })
       }
     } catch (error: any) {
       const msg = error?.data?.message || error?.data?.msg || '删除失败'
@@ -620,7 +628,7 @@ const HrAdminPage = () => {
         setEditAdminHrContacts([])
         loadAdminList()
       } else {
-        Taro.showToast({ title: res.data.msg || '修改失败', icon: 'none' })
+        Taro.showToast({ title: res.data.message || res.data.msg || '修改失败', icon: 'none' })
       }
     } catch (error: any) {
       const msg = error?.data?.message || error?.data?.msg || '修改失败'

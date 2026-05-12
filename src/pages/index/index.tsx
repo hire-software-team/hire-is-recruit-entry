@@ -911,7 +911,7 @@ const IndexPage = () => {
         })
         Taro.showToast({ title: '提交成功', icon: 'success' })
       } else {
-        throw new Error(res.data.msg || '提交失败')
+        throw new Error(res.data.message || res.data.msg || '提交失败')
       }
     } catch (error: any) {
       console.error('提交失败:', error)
