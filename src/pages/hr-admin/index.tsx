@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { View, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { Network } from '@/network'
@@ -146,6 +146,7 @@ const HrAdminPage = () => {
 
       if (res.data.code === 200) {
         setToken(res.data.data.token)
+        try { localStorage.setItem('hr_token', res.data.data.token) } catch {}
         setAdminRole(res.data.data.role || 'level1')
         setIsLoggedIn(true)
         Taro.showToast({ title: '登录成功', icon: 'success' })
@@ -339,6 +340,56 @@ const HrAdminPage = () => {
     }
     setDetail(null)
   }
+
+  // 用 ref 保持 detail 的最新引用，供 cleanup/beforeunload 使用
+  const detailRef = useRef(detail)
+  detailRef.current = detail
+
+  // 组件卸载时自动退出查看模式（兜底：浏览器关闭/刷新等场景）
+  useEffect(() => {
+    return () => {
+      const currentDetail = detailRef.current
+      if (currentDetail && typeof window !== 'undefined') {
+        const url = `${window.location?.origin || ''}/api/hr/employees/${currentDetail.employee.id}/exit-view`
+        const tokenVal = (() => { try { return localStorage.getItem('hr_token') || '' } catch { return '' } })()
+        if (tokenVal) {
+          try {
+            fetch(url, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${tokenVal}`, 'Content-Type': 'application/json' },
+              keepalive: true,
+            }).catch(() => {})
+          } catch {
+            // 降级：忽略
+          }
+        }
+      }
+    }
+  }, [])
+
+  // H5 端 beforeunload 事件：页面关闭/刷新时退出查看
+  useEffect(() => {
+    if (typeof window !== 'undefined' && Taro.getEnv() !== Taro.ENV_TYPE.WEAPP && Taro.getEnv() !== Taro.ENV_TYPE.TT) {
+      const handleBeforeUnload = () => {
+        const currentDetail = detailRef.current
+        if (currentDetail) {
+          const url = `${window.location?.origin || ''}/api/hr/employees/${currentDetail.employee.id}/exit-view`
+          const tokenVal = (() => { try { return localStorage.getItem('hr_token') || '' } catch { return '' } })()
+          if (tokenVal) {
+            try {
+              fetch(url, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${tokenVal}`, 'Content-Type': 'application/json' },
+                keepalive: true,
+              }).catch(() => {})
+            } catch {}
+          }
+        }
+      }
+      window.addEventListener('beforeunload', handleBeforeUnload)
+      return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [])
 
   // 下载员工资料
   const downloadEmployeeFiles = async (employeeId: number, employeeName: string) => {
@@ -909,7 +960,7 @@ const HrAdminPage = () => {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setIsLoggedIn(false)}
+                onClick={() => { try { localStorage.removeItem('hr_token') } catch {}; setIsLoggedIn(false) }}
               >
                 <LogIn size={14} color="#6b7280" className="mr-1" />
                 退出
