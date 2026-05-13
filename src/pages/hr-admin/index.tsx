@@ -191,7 +191,7 @@ export default function HrAdminPage() {
         header: { Authorization: `Bearer ${token}` },
       })
       if (res.data.code === 200) {
-        setAdminList(res.data.data.admins || [])
+        setAdminList(res.data.data || [])
       }
     } catch (error) {
       console.log('获取管理员列表失败:', error)
