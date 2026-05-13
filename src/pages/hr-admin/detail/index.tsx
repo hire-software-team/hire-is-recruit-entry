@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { View, Text } from '@tarojs/components'
+import { View, Text, Image } from '@tarojs/components'
 import Taro, { useUnload, useDidHide } from '@tarojs/taro'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -7,23 +7,30 @@ import { Badge } from '@/components/ui/badge'
 import { Network } from '@/network'
 import { ArrowLeft, Lock, LockOpen, Download, Trash2, CircleCheck, TriangleAlert, Eye } from 'lucide-react-taro'
 
-const FILE_TYPE_GROUPS = {
-  photo: { label: '照片', types: ['id_front', 'id_back', 'photo'] },
-  education: { label: '学历证明', types: ['education'] },
-  medical: { label: '体检报告', types: ['medical_report'] },
-  bank: { label: '银行卡', types: ['bank_card'] },
-  other: { label: '其他', types: ['other'] },
-  signature: { label: '签字确认', types: ['signature'] },
-}
+const FILE_TYPE_GROUPS = [
+  { label: '个人照片', types: ['photo'] },
+  { label: '身份证', types: ['id_card_front', 'id_card_back'] },
+  { label: '学历学位证书', types: ['diploma', 'degree', 'master_diploma', 'master_degree', 'doctor_diploma', 'doctor_degree'] },
+  { label: '体检报告', types: ['medical_report'] },
+  { label: '离职证明', types: ['resignation_proof'] },
+  { label: '银行卡', types: ['bank_card_front', 'bank_card_back'] },
+  { label: '签字确认', types: ['signature'] },
+]
 
 const FILE_TYPE_LABELS: Record<string, string> = {
-  id_front: '身份证正面',
-  id_back: '身份证反面',
   photo: '个人照片',
-  education: '学历证明',
+  id_card_front: '身份证正面',
+  id_card_back: '身份证背面',
+  diploma: '学历证书',
+  degree: '学位证书',
+  master_diploma: '硕士学历证书',
+  master_degree: '硕士学位证书',
+  doctor_diploma: '博士学历证书',
+  doctor_degree: '博士学位证书',
   medical_report: '体检报告',
-  bank_card: '银行卡',
-  other: '其他',
+  resignation_proof: '离职证明',
+  bank_card_front: '银行卡正面',
+  bank_card_back: '银行卡反面',
   signature: '签字确认',
 }
 
@@ -49,6 +56,7 @@ interface Employee {
   viewing_count?: number
   hr_contact?: string
   join_date?: string
+  education?: string
   created_at: string
 }
 
@@ -352,6 +360,14 @@ export default function HrAdminDetail() {
                 <Text className="block text-sm font-medium">{employee.hr_contact}</Text>
               </View>
             )}
+            {employee.education && (
+              <View className="flex justify-between">
+                <Text className="block text-sm text-gray-500">学历</Text>
+                <Text className="block text-sm font-medium">
+                  {{ below_bachelor: '本科以下', bachelor: '本科', master: '硕士', doctor: '博士' }[employee.education] || employee.education}
+                </Text>
+              </View>
+            )}
             {employee.join_date && (
               <View className="flex justify-between">
                 <Text className="block text-sm text-gray-500">入职时间</Text>
@@ -367,62 +383,65 @@ export default function HrAdminDetail() {
       </View>
 
       {/* File groups */}
-      {Object.entries(FILE_TYPE_GROUPS).map(([groupKey, group]) => {
+      {FILE_TYPE_GROUPS.map((group) => {
         const groupFiles = files.filter(f => group.types.includes(f.file_type))
         if (groupFiles.length === 0) return null
         return (
-          <View key={groupKey} className="px-4 mt-4">
+          <View key={group.label} className="px-4 mt-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">{group.label}</CardTitle>
               </CardHeader>
               <CardContent>
-                {groupFiles.map(file => (
-                  <View key={file.id} className="mb-3 last:mb-0">
-                    <View className="flex items-center justify-between mb-1">
-                      <Text className="block text-sm text-gray-600">
-                        {FILE_TYPE_LABELS[file.file_type] || file.file_type}
-                      </Text>
-                      {!isLevel3 && (
-                        <View className="flex items-center" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-                          {file.verification_override ? (
-                            <View
-                              onClick={() => handleVerifyFile(file, false)}
-                              className="flex items-center px-2 py-1 bg-green-50 rounded-full"
-                            >
-                              <CircleCheck size={12} color="#16a34a" />
-                              <Text className="block text-xs text-green-700 ml-1">已通过</Text>
-                            </View>
-                          ) : (
-                            <View
-                              onClick={() => handleVerifyFile(file, true)}
-                              className="flex items-center px-2 py-1 bg-amber-50 rounded-full"
-                            >
-                              <TriangleAlert size={12} color="#d97706" />
-                              <Text className="block text-xs text-amber-700 ml-1">待复核</Text>
-                            </View>
-                          )}
+                {groupFiles.map(file => {
+                  const isPdf = file.file_type_ext?.includes('pdf') || file.file_name?.toLowerCase().endsWith('.pdf')
+                  return (
+                    <View key={file.id} className="mb-3 last:mb-0">
+                      <View className="flex items-center justify-between mb-1">
+                        <Text className="block text-sm text-gray-600">
+                          {FILE_TYPE_LABELS[file.file_type] || file.file_type}
+                        </Text>
+                        {!isLevel3 && (
+                          <View className="flex items-center" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+                            {file.verification_override ? (
+                              <View
+                                onClick={() => handleVerifyFile(file, false)}
+                                className="flex items-center px-2 py-1 bg-green-50 rounded-full"
+                              >
+                                <CircleCheck size={12} color="#16a34a" />
+                                <Text className="block text-xs text-green-700 ml-1">已通过</Text>
+                              </View>
+                            ) : (
+                              <View
+                                onClick={() => handleVerifyFile(file, true)}
+                                className="flex items-center px-2 py-1 bg-amber-50 rounded-full"
+                              >
+                                <TriangleAlert size={12} color="#d97706" />
+                                <Text className="block text-xs text-amber-700 ml-1">待复核</Text>
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                      {file.file_type === 'signature' || isPdf ? (
+                        <View className="h-16 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <Text className="block text-sm text-gray-500">
+                            {file.file_type === 'signature' ? '签字确认' : 'PDF文件'}: {file.file_name}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View className="rounded-lg overflow-hidden bg-gray-100">
+                          <Image
+                            src={file.signed_url || file.url || ''}
+                            mode="aspectFill"
+                            className="w-full h-32"
+                            onError={() => {}}
+                          />
                         </View>
                       )}
                     </View>
-                    {file.file_type === 'signature' || file.file_type_ext?.includes('pdf') ? (
-                      <View className="h-16 bg-gray-100 rounded-lg flex items-center justify-center">
-                        <Text className="block text-sm text-gray-500">
-                          {file.file_type === 'signature' ? '签字确认' : 'PDF文件'}: {file.file_name}
-                        </Text>
-                      </View>
-                    ) : (
-                      <View className="rounded-lg overflow-hidden bg-gray-100">
-                        <img
-                          src={file.signed_url || file.url || ''}
-                          alt={file.file_name}
-                          className="w-full h-32 object-cover"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                        />
-                      </View>
-                    )}
-                  </View>
-                ))}
+                  )
+                })}
               </CardContent>
             </Card>
           </View>
