@@ -8,5 +8,5 @@ if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
 
 export const jwtConstants = {
   secret: process.env.JWT_SECRET || fallbackSecret,
-  expiresIn: '8h',  // 缩短为8小时，降低Token泄露风险
+  expiresIn: '2h',
 }
