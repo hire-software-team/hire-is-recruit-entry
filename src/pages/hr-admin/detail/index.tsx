@@ -566,10 +566,10 @@ export default function HrAdminDetail() {
                   </View>
                 )
               })()}
-              <View className="space-y-2">
-                <View className="flex justify-between">
-                  <Text className="block text-sm text-gray-500">文件名</Text>
-                  <Text className="block text-sm font-medium text-right" style={{ maxWidth: '60%' }}>{previewFile.file_name}</Text>
+              <View className="space-y-3">
+                <View>
+                  <Text className="block text-sm text-gray-500 mb-1">文件名</Text>
+                  <Text className="block text-sm font-medium break-all" style={{ wordBreak: 'break-all' }}>{previewFile.file_name}</Text>
                 </View>
                 {previewFile.file_size > 0 && (
                   <View className="flex justify-between">
