@@ -160,38 +160,6 @@ export default function HrAdminPage() {
     }
   }
 
-  const handleDownloadAll = async () => {
-    try {
-      Taro.showLoading({ title: '正在打包下载...' })
-      const res = await Network.downloadFile({
-        url: '/api/hr/employees/download-all',
-        header: { Authorization: `Bearer ${token}` },
-      })
-      Taro.hideLoading()
-      if (res.statusCode === 200) {
-        const filePath = res.tempFilePath
-        // H5端：创建 a 标签下载
-        if (typeof document !== 'undefined') {
-          const a = document.createElement('a')
-          a.href = filePath
-          a.download = `员工资料_${new Date().toISOString().split('T')[0]}.zip`
-          a.click()
-        } else {
-          // 小程序端：保存到本地
-          await Taro.saveFile({ tempFilePath: filePath })
-          Taro.showToast({ title: '已保存到本地', icon: 'success' })
-          return
-        }
-        Taro.showToast({ title: '下载成功', icon: 'success' })
-      } else {
-        Taro.showToast({ title: '下载失败', icon: 'none' })
-      }
-    } catch (error) {
-      Taro.hideLoading()
-      Taro.showToast({ title: '下载失败', icon: 'none' })
-    }
-  }
-
   // 管理员管理
   const fetchAdminList = async () => {
     try {
@@ -320,7 +288,6 @@ export default function HrAdminPage() {
     e.name.includes(searchQuery) || e.phone?.includes(searchQuery)
   )
 
-  const isH5 = Taro.getEnv() === Taro.ENV_TYPE.WEB
 
   // ==================== 登录页 ====================
   if (!isLoggedIn) {
@@ -596,11 +563,7 @@ export default function HrAdminPage() {
         <Button size="sm" variant="outline" className="flex-1" onClick={() => fetchEmployees()}>
           <Text>刷新</Text>
         </Button>
-        {isH5 && (
-          <Button size="sm" variant="outline" className="flex-1" onClick={handleDownloadAll}>
-            <Text>下载全部</Text>
-          </Button>
-        )}
+
       </View>
 
       {/* 员工列表 */}
