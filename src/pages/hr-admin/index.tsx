@@ -426,7 +426,7 @@ export default function HrAdminPage() {
                   <View key={admin.id} className="flex flex-row items-center justify-between py-2 border-b border-gray-100 last:border-0">
                     <View>
                       <Text className="block text-sm font-medium">{admin.username}</Text>
-                      <Text className="block text-xs text-gray-500">{admin.role} · {admin.hr_contacts?.join(', ') || '全部'}</Text>
+                      <Text className="block text-xs text-gray-500">{admin.role} · {(admin.hrContacts || admin.hr_contacts)?.join?.(', ') || '全部'}</Text>
                     </View>
                     {admin.role !== 'level1' && (
                       <Button size="sm" variant="destructive" onClick={() => handleDeleteAdmin(admin.id)}>
