@@ -208,6 +208,7 @@ export class HrController {
       education: string
       join_date: string
       hr_contact: string
+      bank_branch?: string
       files: Array<{
         fileType: string
         fileKey: string
@@ -300,6 +301,7 @@ export class HrController {
         education: body.education,
         join_date: body.join_date,
         hr_contact: body.hr_contact,
+        bank_branch: body.bank_branch,
       })
 
       // 替换文件记录
@@ -332,6 +334,7 @@ export class HrController {
       education: body.education,
       join_date: body.join_date,
       hr_contact: body.hr_contact,
+      bank_branch: body.bank_branch,
     })
 
     // 创建文件记录
