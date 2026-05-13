@@ -14,7 +14,7 @@ const FILE_TYPE_GROUPS = [
   { label: '学历学位证书', types: ['diploma', 'degree', 'master_diploma', 'master_degree', 'doctor_diploma', 'doctor_degree'] },
   { label: '体检报告', types: ['medical_report'] },
   { label: '离职证明', types: ['resignation_proof'] },
-  { label: '银行卡', types: ['bank_card_front', 'bank_card_back', 'bank_statement'] },
+  { label: '银行卡', types: ['bank_card_front', 'bank_card_back', 'bank_statement'], showEmpty: true },
   { label: '签字确认', types: ['signature'] },
 ]
 
@@ -382,12 +382,10 @@ export default function HrAdminDetail() {
                 <Text className="block text-sm font-medium">{employee.hr_contact}</Text>
               </View>
             )}
-            {employee.bank_branch && (
-              <View className="flex justify-between">
-                <Text className="block text-sm text-gray-500">开户行</Text>
-                <Text className="block text-sm font-medium max-w-[60%] text-right" style={{ wordBreak: 'break-all' }}>{employee.bank_branch}</Text>
-              </View>
-            )}
+            <View className="flex justify-between">
+              <Text className="block text-sm text-gray-500">开户行</Text>
+              <Text className="block text-sm font-medium max-w-[60%] text-right" style={{ wordBreak: 'break-all' }}>{employee.bank_branch || '未填写'}</Text>
+            </View>
             {employee.education && (
               <View className="flex justify-between">
                 <Text className="block text-sm text-gray-500">学历</Text>
@@ -413,7 +411,7 @@ export default function HrAdminDetail() {
       {/* File groups */}
       {FILE_TYPE_GROUPS.map((group) => {
         const groupFiles = files.filter(f => group.types.includes(f.file_type))
-        if (groupFiles.length === 0) return null
+        if (groupFiles.length === 0 && !group.showEmpty) return null
         return (
           <View key={group.label} className="px-4 mt-4">
             <Card>
@@ -484,6 +482,11 @@ export default function HrAdminDetail() {
                     </View>
                   )
                 })}
+                {groupFiles.length === 0 && group.showEmpty && (
+                  <View className="py-4 flex items-center justify-center">
+                    <Text className="block text-sm text-gray-400">暂未上传</Text>
+                  </View>
+                )}
               </CardContent>
             </Card>
           </View>
