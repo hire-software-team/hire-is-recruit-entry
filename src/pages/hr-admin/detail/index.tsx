@@ -4,7 +4,7 @@ import Taro, { useUnload, useDidHide } from '@tarojs/taro'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Network } from '@/network'
 import { ArrowLeft, Lock, LockOpen, Download, Trash2, CircleCheck, TriangleAlert, Eye } from 'lucide-react-taro'
 
@@ -523,30 +523,17 @@ export default function HrAdminDetail() {
         </View>
       )}
 
-      {/* File preview dialog */}
-      <Dialog open={!!previewFile} onOpenChange={(open) => { if (!open) setPreviewFile(null) }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{FILE_TYPE_LABELS[previewFile?.file_type || ''] || '文件详情'}</DialogTitle>
-          </DialogHeader>
+      {/* File preview sheet */}
+      <Sheet open={!!previewFile} onOpenChange={(open) => { if (!open) setPreviewFile(null) }}>
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[80vh] overflow-y-auto" style={{ borderTopLeftRadius: '16px', borderTopRightRadius: '16px', maxHeight: '80vh', overflowY: 'auto' }}>
+          <SheetHeader className="mb-3">
+            <SheetTitle>{FILE_TYPE_LABELS[previewFile?.file_type || ''] || '文件详情'}</SheetTitle>
+          </SheetHeader>
           {previewFile && (
-            <View className="space-y-3">
+            <View className="space-y-4">
               {(() => {
                 const isPdf = previewFile.file_type_ext?.includes('pdf') || previewFile.file_name?.toLowerCase().endsWith('.pdf')
-                const isSignature = previewFile.file_type === 'signature'
-                if (!isPdf && !isSignature) {
-                  return (
-                    <View className="rounded-lg overflow-hidden bg-gray-50">
-                      <Image
-                        src={previewFile.signed_url || previewFile.url || ''}
-                        mode="widthFix"
-                        className="w-full"
-                        onError={() => {}}
-                      />
-                    </View>
-                  )
-                }
-                if (isSignature) {
+                if (!isPdf) {
                   return (
                     <View className="rounded-lg overflow-hidden bg-gray-50">
                       <Image
@@ -598,8 +585,8 @@ export default function HrAdminDetail() {
               </View>
             </View>
           )}
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       {/* Lock confirm dialog */}
       {showLockConfirm && (
