@@ -44,7 +44,7 @@ export default function HrAdminPage() {
   const [newAdminUsername, setNewAdminUsername] = useState('')
   const [newAdminPassword, setNewAdminPassword] = useState('')
   const [newAdminRole, setNewAdminRole] = useState('level3')
-  const [newAdminHrContacts, setNewAdminHrContacts] = useState('魏经理')
+  const [newAdminHrContacts, setNewAdminHrContacts] = useState<string[]>(['魏经理'])
 
   // 页面显示时检查登录状态和刷新数据
   useEffect(() => {
@@ -101,7 +101,7 @@ export default function HrAdminPage() {
         setIsLoggedIn(true)
         Taro.setStorageSync('hr_token', data.token)
         Taro.setStorageSync('hr_role', data.role || 'level1')
-        Taro.setStorageSync('hr_hrContacts', (data.hrContacts || []).join(','))
+        Taro.setStorageSync('hr_hrContacts', Array.isArray(data.hrContacts) ? data.hrContacts.join(',') : (data.hrContacts || ''))
         Taro.setStorageSync('hr_username', username)
         fetchEmployees(data.token)
       } else {
@@ -212,7 +212,7 @@ export default function HrAdminPage() {
           username: newAdminUsername,
           password: newAdminPassword,
           role: newAdminRole,
-          hrContacts: newAdminRole !== 'level1' ? newAdminHrContacts.split(',').map(s => s.trim()) : [],
+          hrContacts: newAdminRole !== 'level1' ? newAdminHrContacts : [],
         },
       })
       if (res.data.code === 200) {
@@ -391,7 +391,13 @@ export default function HrAdminPage() {
                         key={contact}
                         size="sm"
                         variant={newAdminHrContacts.includes(contact) ? 'default' : 'outline'}
-                        onClick={() => setNewAdminHrContacts(contact)}
+                        onClick={() => {
+                          setNewAdminHrContacts(prev =>
+                            prev.includes(contact)
+                              ? prev.filter(c => c !== contact)
+                              : [...prev, contact]
+                          )
+                        }}
                       >
                         <Text>{contact}</Text>
                       </Button>
