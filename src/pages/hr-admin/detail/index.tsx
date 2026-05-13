@@ -68,7 +68,7 @@ export default function HrAdminDetail() {
   const router = Taro.getCurrentInstance()
   const employeeId = router.router?.params?.employeeId
   const token = router.router?.params?.token || Taro.getStorageSync('hr_token')
-  const adminRole = router.router?.params?.adminRole || Taro.getStorageSync('hr_admin_role')
+  const adminRole = router.router?.params?.adminRole || Taro.getStorageSync('hr_role')
 
   const isLevel3 = adminRole === 'level3'
 

@@ -126,7 +126,7 @@ export default function HrAdminPage() {
 
   const handleViewDetail = (employeeId: number) => {
     Taro.navigateTo({
-      url: `/pages/hr-admin/detail/index?id=${employeeId}`
+      url: `/pages/hr-admin/detail/index?employeeId=${employeeId}`
     })
   }
 
