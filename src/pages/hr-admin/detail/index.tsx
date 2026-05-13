@@ -269,9 +269,11 @@ export default function HrAdminDetail() {
           a.download = `${detail.employee.name}_入职资料.zip`
           a.click()
         } else {
-          // 小程序端: 保存到本地或打开
-          await Taro.saveFile({ tempFilePath })
-          Taro.showToast({ title: '已保存到本地', icon: 'success' })
+          // 小程序端: 用文档查看器打开，用户可选择保存位置
+          await Taro.openDocument({
+            filePath: tempFilePath,
+            showMenu: true,
+          })
         }
       } else {
         Taro.showToast({ title: '下载失败', icon: 'none' })
