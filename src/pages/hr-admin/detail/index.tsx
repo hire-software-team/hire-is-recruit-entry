@@ -384,7 +384,7 @@ export default function HrAdminDetail() {
             )}
             <View className="flex justify-between">
               <Text className="block text-sm text-gray-500">开户行</Text>
-              <Text className="block text-sm font-medium max-w-[60%] text-right" style={{ wordBreak: 'break-all' }}>{employee.bank_branch || '未填写'}</Text>
+              <Text className="block text-sm font-medium text-right" style={{ wordBreak: 'break-all', maxWidth: '60%' }}>{employee.bank_branch || '未填写'}</Text>
             </View>
             {employee.education && (
               <View className="flex justify-between">
@@ -411,7 +411,9 @@ export default function HrAdminDetail() {
       {/* File groups */}
       {FILE_TYPE_GROUPS.map((group) => {
         const groupFiles = files.filter(f => group.types.includes(f.file_type))
-        if (groupFiles.length === 0 && !group.showEmpty) return null
+        // 对于 showEmpty 的组，按文件类型逐个渲染槽位
+        const hasAnyFile = groupFiles.length > 0
+        if (!hasAnyFile && !group.showEmpty) return null
         return (
           <View key={group.label} className="px-4 mt-4">
             <Card>
@@ -419,73 +421,149 @@ export default function HrAdminDetail() {
                 <CardTitle className="text-base">{group.label}</CardTitle>
               </CardHeader>
               <CardContent>
-                {groupFiles.map(file => {
-                  const isPdf = file.file_type_ext?.includes('pdf') || file.file_name?.toLowerCase().endsWith('.pdf')
-                  const isSignature = file.file_type === 'signature'
-                  const isImage = !isPdf && !isSignature
-                  return (
-                    <View key={file.id} className="mb-3 last:mb-0">
-                      <View className="flex items-center justify-between mb-1">
-                        <Text className="block text-sm text-gray-600">
-                          {FILE_TYPE_LABELS[file.file_type] || file.file_type}
+                {group.showEmpty ? (
+                  // 按文件类型逐个显示，无文件时显示空槽位
+                  group.types.map(type => {
+                    const typeFiles = groupFiles.filter(f => f.file_type === type)
+                    return (
+                      <View key={type} className="mb-3 last:mb-0">
+                        <Text className="block text-sm text-gray-600 mb-1">
+                          {FILE_TYPE_LABELS[type] || type}
                         </Text>
-                        {!isLevel3 && (
-                          <View className="flex items-center" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-                            {file.verification_override ? (
-                              <View
-                                onClick={() => handleVerifyFile(file, false)}
-                                className="flex items-center px-2 py-1 bg-green-50 rounded-full"
-                              >
-                                <CircleCheck size={12} color="#16a34a" />
-                                <Text className="block text-xs text-green-700 ml-1">已通过</Text>
+                        {typeFiles.length > 0 ? (
+                          typeFiles.map(file => {
+                            const isPdf = file.file_type_ext?.includes('pdf') || file.file_name?.toLowerCase().endsWith('.pdf')
+                            const isSignature = file.file_type === 'signature'
+                            const isImage = !isPdf && !isSignature
+                            return (
+                              <View key={file.id} className="mt-1">
+                                <View className="flex items-center justify-between mb-1">
+                                  {!isLevel3 && (
+                                    <View className="flex items-center" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+                                      {file.verification_override ? (
+                                        <View
+                                          onClick={() => handleVerifyFile(file, false)}
+                                          className="flex items-center px-2 py-1 bg-green-50 rounded-full"
+                                        >
+                                          <CircleCheck size={12} color="#16a34a" />
+                                          <Text className="block text-xs text-green-700 ml-1">已通过</Text>
+                                        </View>
+                                      ) : (
+                                        <View
+                                          onClick={() => handleVerifyFile(file, true)}
+                                          className="flex items-center px-2 py-1 bg-amber-50 rounded-full"
+                                        >
+                                          <TriangleAlert size={12} color="#d97706" />
+                                          <Text className="block text-xs text-amber-700 ml-1">待复核</Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                  )}
+                                </View>
+                                {isImage ? (
+                                  <View className="rounded-lg overflow-hidden bg-gray-100" onClick={() => setPreviewFile(file)}>
+                                    <Image
+                                      src={file.signed_url || file.url || ''}
+                                      mode="aspectFill"
+                                      className="w-full h-32"
+                                      onError={() => {}}
+                                    />
+                                  </View>
+                                ) : isSignature ? (
+                                  <View className="rounded-lg overflow-hidden bg-gray-100" onClick={() => setPreviewFile(file)}>
+                                    <Image
+                                      src={file.signed_url || file.url || ''}
+                                      mode="widthFix"
+                                      className="w-full"
+                                      onError={() => {}}
+                                    />
+                                  </View>
+                                ) : (
+                                  <View
+                                    className="h-16 bg-gray-100 rounded-lg flex items-center justify-center px-3"
+                                    onClick={() => setPreviewFile(file)}
+                                  >
+                                    <Text className="block text-sm text-gray-500 truncate" style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      PDF文件: {file.file_name}
+                                    </Text>
+                                  </View>
+                                )}
                               </View>
-                            ) : (
-                              <View
-                                onClick={() => handleVerifyFile(file, true)}
-                                className="flex items-center px-2 py-1 bg-amber-50 rounded-full"
-                              >
-                                <TriangleAlert size={12} color="#d97706" />
-                                <Text className="block text-xs text-amber-700 ml-1">待复核</Text>
-                              </View>
-                            )}
+                            )
+                          })
+                        ) : (
+                          <View className="py-3 flex items-center justify-center bg-gray-50 rounded-lg mt-1">
+                            <Text className="block text-sm text-gray-400">暂未上传</Text>
                           </View>
                         )}
                       </View>
-                      {isImage ? (
-                        <View className="rounded-lg overflow-hidden bg-gray-100" onClick={() => setPreviewFile(file)}>
-                          <Image
-                            src={file.signed_url || file.url || ''}
-                            mode="aspectFill"
-                            className="w-full h-32"
-                            onError={() => {}}
-                          />
-                        </View>
-                      ) : isSignature ? (
-                        <View className="rounded-lg overflow-hidden bg-gray-100" onClick={() => setPreviewFile(file)}>
-                          <Image
-                            src={file.signed_url || file.url || ''}
-                            mode="widthFix"
-                            className="w-full"
-                            onError={() => {}}
-                          />
-                        </View>
-                      ) : (
-                        <View
-                          className="h-16 bg-gray-100 rounded-lg flex items-center justify-center px-3"
-                          onClick={() => setPreviewFile(file)}
-                        >
-                          <Text className="block text-sm text-gray-500 truncate" style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            PDF文件: {file.file_name}
+                    )
+                  })
+                ) : (
+                  // 非 showEmpty 组，只显示有文件的
+                  groupFiles.map(file => {
+                    const isPdf = file.file_type_ext?.includes('pdf') || file.file_name?.toLowerCase().endsWith('.pdf')
+                    const isSignature = file.file_type === 'signature'
+                    const isImage = !isPdf && !isSignature
+                    return (
+                      <View key={file.id} className="mb-3 last:mb-0">
+                        <View className="flex items-center justify-between mb-1">
+                          <Text className="block text-sm text-gray-600">
+                            {FILE_TYPE_LABELS[file.file_type] || file.file_type}
                           </Text>
+                          {!isLevel3 && (
+                            <View className="flex items-center" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+                              {file.verification_override ? (
+                                <View
+                                  onClick={() => handleVerifyFile(file, false)}
+                                  className="flex items-center px-2 py-1 bg-green-50 rounded-full"
+                                >
+                                  <CircleCheck size={12} color="#16a34a" />
+                                  <Text className="block text-xs text-green-700 ml-1">已通过</Text>
+                                </View>
+                              ) : (
+                                <View
+                                  onClick={() => handleVerifyFile(file, true)}
+                                  className="flex items-center px-2 py-1 bg-amber-50 rounded-full"
+                                >
+                                  <TriangleAlert size={12} color="#d97706" />
+                                  <Text className="block text-xs text-amber-700 ml-1">待复核</Text>
+                                </View>
+                              )}
+                            </View>
+                          )}
                         </View>
-                      )}
-                    </View>
-                  )
-                })}
-                {groupFiles.length === 0 && group.showEmpty && (
-                  <View className="py-4 flex items-center justify-center">
-                    <Text className="block text-sm text-gray-400">暂未上传</Text>
-                  </View>
+                        {isImage ? (
+                          <View className="rounded-lg overflow-hidden bg-gray-100" onClick={() => setPreviewFile(file)}>
+                            <Image
+                              src={file.signed_url || file.url || ''}
+                              mode="aspectFill"
+                              className="w-full h-32"
+                              onError={() => {}}
+                            />
+                          </View>
+                        ) : isSignature ? (
+                          <View className="rounded-lg overflow-hidden bg-gray-100" onClick={() => setPreviewFile(file)}>
+                            <Image
+                              src={file.signed_url || file.url || ''}
+                              mode="widthFix"
+                              className="w-full"
+                              onError={() => {}}
+                            />
+                          </View>
+                        ) : (
+                          <View
+                            className="h-16 bg-gray-100 rounded-lg flex items-center justify-center px-3"
+                            onClick={() => setPreviewFile(file)}
+                          >
+                            <Text className="block text-sm text-gray-500 truncate" style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              PDF文件: {file.file_name}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )
+                  })
                 )}
               </CardContent>
             </Card>
