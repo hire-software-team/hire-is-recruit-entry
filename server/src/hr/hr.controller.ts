@@ -456,6 +456,77 @@ export class HrController {
   }
 
   /**
+   * 打包下载全部员工资料（管理员，JWT 鉴权）
+   * 注意：此路由必须在 employees/:id 之前定义，否则 :id 会匹配 download-all
+   */
+  @Get('employees/download-all')
+  @UseGuards(AuthGuard('jwt'))
+  async downloadAllEmployeeFiles(
+    @Res() res: Response,
+    @Req() req: any,
+  ) {
+    console.log('管理员下载全部员工资料')
+    const { role, hrContacts } = req.user
+
+    if (role === 'level3') {
+      throw new ForbiddenException('三级管理员无权下载资料')
+    }
+
+    const hrFilter = this.hrService.buildHrContactFilter(role, hrContacts)
+    const { employees } = await this.hrService.getEmployeeList({ hrContacts: hrFilter })
+
+    if (!employees || employees.length === 0) {
+      throw new NotFoundException('没有可下载的员工资料')
+    }
+
+    const zipFileName = encodeURIComponent('全部员工入职资料.zip')
+    res.setHeader('Content-Type', 'application/zip')
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${zipFileName}`)
+
+    const archive = archiver('zip', { zlib: { level: 5 } })
+    archive.pipe(res)
+
+    archive.on('error', (err) => {
+      console.error('归档流错误:', err)
+      if (!res.headersSent) {
+        res.status(500).json({ code: 500, msg: '打包下载失败' })
+      }
+      archive.abort()
+    })
+
+    try {
+      for (const emp of employees) {
+        const result = await this.hrService.getEmployeeDetail(emp.id)
+        if (!result || !result.files || result.files.length === 0) continue
+
+        const empName = result.employee.name || `员工${emp.id}`
+        const folderName = empName.replace(/[\/\\:*?"<>|]/g, '_')
+
+        for (const file of result.files) {
+          try {
+            const fileBuffer = await this.storageService.downloadFile(file.file_key)
+            const typeName = this.getFileTypeName(file.file_type)
+            const ext = file.file_name.split('.').pop() || mimeTypeToExt(file.file_type_ext) || 'bin'
+            const fileName = `${typeName}_${file.id}.${ext}`
+
+            archive.append(fileBuffer, { name: `${folderName}/${fileName}` })
+          } catch (error) {
+            console.error(`下载文件 ${file.file_key} 失败:`, error)
+          }
+        }
+      }
+
+      await archive.finalize()
+    } catch (error) {
+      console.error('打包下载全部异常:', error)
+      if (!res.headersSent) {
+        res.status(500).json({ code: 500, msg: '打包下载失败' })
+      }
+      archive.abort()
+    }
+  }
+
+  /**
    * 获取员工详情（管理员，JWT 鉴权）
    */
   @Get('employees/:id')
@@ -745,6 +816,7 @@ export class HrController {
       resignation_proof: '离职证明',
       bank_card_front: '银行卡正面',
       bank_card_back: '银行卡反面',
+      bank_statement: '银行流水',
       signature: '签字确认',
       // 学历学位证书
       diploma: '学历证书',
