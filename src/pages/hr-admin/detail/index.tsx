@@ -4,6 +4,7 @@ import Taro, { useUnload, useDidHide } from '@tarojs/taro'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Network } from '@/network'
 import { ArrowLeft, Lock, LockOpen, Download, Trash2, CircleCheck, TriangleAlert, Eye } from 'lucide-react-taro'
 
@@ -40,6 +41,7 @@ interface EmployeeFile {
   file_name: string
   file_key: string
   file_type_ext: string
+  file_size: number
   verification_override?: boolean
   signed_url?: string
   url?: string
@@ -70,6 +72,7 @@ export default function HrAdminDetail() {
   const [loading, setLoading] = useState(true)
   const [showLockConfirm, setShowLockConfirm] = useState(false)
   const [confirmAction, setConfirmAction] = useState<'lock' | 'unlock'>('lock')
+  const [previewFile, setPreviewFile] = useState<EmployeeFile | null>(null)
   const detailRef = useRef<EmployeeDetail | null>(null)
   const exitCalledRef = useRef(false)
 
@@ -300,6 +303,23 @@ export default function HrAdminDetail() {
     return map[status] || 'bg-gray-100 text-gray-700'
   }
 
+  const formatTime = (dateStr: string) => {
+    const d = new Date(dateStr)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    const h = String(d.getHours()).padStart(2, '0')
+    const min = String(d.getMinutes()).padStart(2, '0')
+    const s = String(d.getSeconds()).padStart(2, '0')
+    return `${y}-${m}-${day} ${h}:${min}:${s}`
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + 'B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + 'MB'
+  }
+
   if (loading) {
     return (
       <View className="flex items-center justify-center h-screen">
@@ -376,7 +396,7 @@ export default function HrAdminDetail() {
             )}
             <View className="flex justify-between">
               <Text className="block text-sm text-gray-500">提交时间</Text>
-              <Text className="block text-sm font-medium">{new Date(employee.created_at).toLocaleString()}</Text>
+              <Text className="block text-sm font-medium">{formatTime(employee.created_at)}</Text>
             </View>
           </CardContent>
         </Card>
@@ -395,6 +415,8 @@ export default function HrAdminDetail() {
               <CardContent>
                 {groupFiles.map(file => {
                   const isPdf = file.file_type_ext?.includes('pdf') || file.file_name?.toLowerCase().endsWith('.pdf')
+                  const isSignature = file.file_type === 'signature'
+                  const isImage = !isPdf && !isSignature
                   return (
                     <View key={file.id} className="mb-3 last:mb-0">
                       <View className="flex items-center justify-between mb-1">
@@ -423,20 +445,32 @@ export default function HrAdminDetail() {
                           </View>
                         )}
                       </View>
-                      {file.file_type === 'signature' || isPdf ? (
-                        <View className="h-16 bg-gray-100 rounded-lg flex items-center justify-center">
-                          <Text className="block text-sm text-gray-500">
-                            {file.file_type === 'signature' ? '签字确认' : 'PDF文件'}: {file.file_name}
-                          </Text>
-                        </View>
-                      ) : (
-                        <View className="rounded-lg overflow-hidden bg-gray-100">
+                      {isImage ? (
+                        <View className="rounded-lg overflow-hidden bg-gray-100" onClick={() => setPreviewFile(file)}>
                           <Image
                             src={file.signed_url || file.url || ''}
                             mode="aspectFill"
                             className="w-full h-32"
                             onError={() => {}}
                           />
+                        </View>
+                      ) : isSignature ? (
+                        <View className="rounded-lg overflow-hidden bg-gray-100" onClick={() => setPreviewFile(file)}>
+                          <Image
+                            src={file.signed_url || file.url || ''}
+                            mode="widthFix"
+                            className="w-full"
+                            onError={() => {}}
+                          />
+                        </View>
+                      ) : (
+                        <View
+                          className="h-16 bg-gray-100 rounded-lg flex items-center justify-center px-3"
+                          onClick={() => setPreviewFile(file)}
+                        >
+                          <Text className="block text-sm text-gray-500 truncate" style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            PDF文件: {file.file_name}
+                          </Text>
                         </View>
                       )}
                     </View>
@@ -488,6 +522,84 @@ export default function HrAdminDetail() {
           </Button>
         </View>
       )}
+
+      {/* File preview dialog */}
+      <Dialog open={!!previewFile} onOpenChange={(open) => { if (!open) setPreviewFile(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{FILE_TYPE_LABELS[previewFile?.file_type || ''] || '文件详情'}</DialogTitle>
+          </DialogHeader>
+          {previewFile && (
+            <View className="space-y-3">
+              {(() => {
+                const isPdf = previewFile.file_type_ext?.includes('pdf') || previewFile.file_name?.toLowerCase().endsWith('.pdf')
+                const isSignature = previewFile.file_type === 'signature'
+                if (!isPdf && !isSignature) {
+                  return (
+                    <View className="rounded-lg overflow-hidden bg-gray-50">
+                      <Image
+                        src={previewFile.signed_url || previewFile.url || ''}
+                        mode="widthFix"
+                        className="w-full"
+                        onError={() => {}}
+                      />
+                    </View>
+                  )
+                }
+                if (isSignature) {
+                  return (
+                    <View className="rounded-lg overflow-hidden bg-gray-50">
+                      <Image
+                        src={previewFile.signed_url || previewFile.url || ''}
+                        mode="widthFix"
+                        className="w-full"
+                        onError={() => {}}
+                      />
+                    </View>
+                  )
+                }
+                return (
+                  <View className="p-4 bg-gray-50 rounded-lg">
+                    <Text className="block text-sm text-gray-600">
+                      PDF文件，请在下载后查看完整内容
+                    </Text>
+                  </View>
+                )
+              })()}
+              <View className="space-y-2">
+                <View className="flex justify-between">
+                  <Text className="block text-sm text-gray-500">文件名</Text>
+                  <Text className="block text-sm font-medium text-right" style={{ maxWidth: '60%' }}>{previewFile.file_name}</Text>
+                </View>
+                {previewFile.file_size > 0 && (
+                  <View className="flex justify-between">
+                    <Text className="block text-sm text-gray-500">文件大小</Text>
+                    <Text className="block text-sm font-medium">{formatFileSize(previewFile.file_size)}</Text>
+                  </View>
+                )}
+                <View className="flex justify-between">
+                  <Text className="block text-sm text-gray-500">文件类型</Text>
+                  <Text className="block text-sm font-medium">{previewFile.file_type_ext || '未知'}</Text>
+                </View>
+                <View className="flex justify-between items-center">
+                  <Text className="block text-sm text-gray-500">审核状态</Text>
+                  {previewFile.verification_override ? (
+                    <View className="flex items-center px-2 py-1 bg-green-50 rounded-full" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+                      <CircleCheck size={12} color="#16a34a" />
+                      <Text className="block text-xs text-green-700 ml-1">已通过</Text>
+                    </View>
+                  ) : (
+                    <View className="flex items-center px-2 py-1 bg-amber-50 rounded-full" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
+                      <TriangleAlert size={12} color="#d97706" />
+                      <Text className="block text-xs text-amber-700 ml-1">待复核</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Lock confirm dialog */}
       {showLockConfirm && (
