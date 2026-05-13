@@ -14,7 +14,7 @@ const FILE_TYPE_GROUPS = [
   { label: '学历学位证书', types: ['diploma', 'degree', 'master_diploma', 'master_degree', 'doctor_diploma', 'doctor_degree'] },
   { label: '体检报告', types: ['medical_report'] },
   { label: '离职证明', types: ['resignation_proof'] },
-  { label: '银行卡', types: ['bank_card_front', 'bank_card_back'] },
+  { label: '银行卡', types: ['bank_card_front', 'bank_card_back', 'bank_statement'] },
   { label: '签字确认', types: ['signature'] },
 ]
 
@@ -32,6 +32,7 @@ const FILE_TYPE_LABELS: Record<string, string> = {
   resignation_proof: '离职证明',
   bank_card_front: '银行卡正面',
   bank_card_back: '银行卡反面',
+  bank_statement: '银行流水',
   signature: '签字确认',
 }
 
@@ -57,6 +58,7 @@ interface Employee {
   locked_at?: string
   viewing_count?: number
   hr_contact?: string
+  bank_branch?: string
   join_date?: string
   education?: string
   created_at: string
@@ -378,6 +380,12 @@ export default function HrAdminDetail() {
               <View className="flex justify-between">
                 <Text className="block text-sm text-gray-500">对接HR</Text>
                 <Text className="block text-sm font-medium">{employee.hr_contact}</Text>
+              </View>
+            )}
+            {employee.bank_branch && (
+              <View className="flex justify-between">
+                <Text className="block text-sm text-gray-500">开户行</Text>
+                <Text className="block text-sm font-medium max-w-[60%] text-right" style={{ wordBreak: 'break-all' }}>{employee.bank_branch}</Text>
               </View>
             )}
             {employee.education && (

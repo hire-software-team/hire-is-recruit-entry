@@ -59,6 +59,7 @@ const FILE_TYPE_CONFIG: Record<string, { name: string; required: boolean; maxCou
   resignation_proof: { name: '离职证明', required: true, maxCount: 1, accept: 'image' },
   bank_card_front: { name: '银行卡正面', required: true, maxCount: 1, accept: 'image' },
   bank_card_back: { name: '银行卡反面', required: true, maxCount: 1, accept: 'image' },
+  bank_statement: { name: '银行流水', required: false, maxCount: 5, accept: 'mixed' },
 }
 
 // 学历学位证书槽位定义（固定6个，根据学历决定显示哪些）
@@ -105,6 +106,7 @@ const FILE_TYPE_LABELS: Record<string, string> = {
   resignation_proof: '离职证明',
   bank_card_front: '银行卡正面',
   bank_card_back: '银行卡反面',
+  bank_statement: '银行流水',
   degree_cert_1: '学位证书1',
   degree_cert_2: '学位证书2',
   degree_cert_3: '学位证书3',
@@ -116,7 +118,7 @@ const FILE_TYPE_GROUPS = [
   { label: '学历学位证书', types: ['diploma', 'degree', 'master_diploma', 'master_degree', 'doctor_diploma', 'doctor_degree'] },
   { label: '体检报告', types: ['medical_report'] },
   { label: '离职证明', types: ['resignation_proof'] },
-  { label: '银行卡', types: ['bank_card_front', 'bank_card_back'] },
+  { label: '银行卡', types: ['bank_card_front', 'bank_card_back', 'bank_statement'] },
 ]
 
 // 判断文件类型是否为图片（兼容 MIME 类型和扩展名两种格式）
@@ -133,6 +135,7 @@ const IndexPage = () => {
   const [education, setEducation] = useState('')
   const [joinDate, setJoinDate] = useState('')
   const [hrContact, setHrContact] = useState('')
+  const [bankBranch, setBankBranch] = useState('')
   const [uploadedFiles, setUploadedFiles] = useState<FileInfo[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [verifyingType, setVerifyingType] = useState<string | null>(null)
@@ -161,7 +164,7 @@ const IndexPage = () => {
 
   // 保存草稿到 localStorage（仅保存表单数据，不保存文件信息）
   // 文件上传后会话有时效性，重新打开需重新上传
-  const saveDraft = (draftName: string, draftPhone: string, draftEducation: string, draftJoinDate: string, _draftFiles?: FileInfo[], draftHrContact?: string) => {
+  const saveDraft = (draftName: string, draftPhone: string, draftEducation: string, draftJoinDate: string, _draftFiles?: FileInfo[], draftHrContact?: string, draftBankBranch?: string) => {
     try {
       Taro.setStorageSync(DRAFT_KEY, JSON.stringify({
         name: draftName,
@@ -169,6 +172,7 @@ const IndexPage = () => {
         education: draftEducation,
         joinDate: draftJoinDate,
         hrContact: draftHrContact,
+        bankBranch: draftBankBranch,
         updatedAt: Date.now(),
       }))
     } catch (e) {
@@ -222,6 +226,7 @@ const IndexPage = () => {
             setEducation(emp.education || '')
             setJoinDate(emp.join_date || emp.joinDate || '')
             setHrContact(emp.hr_contact || emp.hrContact || '')
+            setBankBranch(emp.bank_branch || emp.bankBranch || '')
             setUploadedFiles([])
 
             // 通过 API 检查锁定状态
@@ -264,6 +269,7 @@ const IndexPage = () => {
         setEducation(draft.education || '')
         setJoinDate(draft.joinDate || '')
         setHrContact(draft.hrContact || '')
+        setBankBranch(draft.bankBranch || '')
         Taro.showToast({ title: '已恢复表单信息，请重新上传文件', icon: 'none', duration: 3000 })
       }
     } catch (e) {
@@ -288,13 +294,13 @@ const IndexPage = () => {
         return visibleSlotKeys.includes(f.fileType)  // 新学历范围内的文件保留
       })
       setUploadedFiles(remainingFiles)
-      saveDraft(name, phone, newEdu, joinDate, remainingFiles, newEdu ? hrContact : undefined)
+      saveDraft(name, phone, newEdu, joinDate, remainingFiles, newEdu ? hrContact : undefined, bankBranch)
     } else {
       // 未选择学历，清除所有学历文件
       const eduKeys = EDU_CERT_SLOTS.map(s => s.key)
       const remainingFiles = uploadedFiles.filter(f => !eduKeys.includes(f.fileType))
       setUploadedFiles(remainingFiles)
-      saveDraft(name, phone, newEdu, joinDate, remainingFiles, newEdu ? hrContact : undefined)
+      saveDraft(name, phone, newEdu, joinDate, remainingFiles, newEdu ? hrContact : undefined, bankBranch)
     }
   }
 
@@ -487,7 +493,7 @@ const IndexPage = () => {
                 verificationOverride: skipVerify ? true : undefined,
               }]
               setUploadedFiles(newFiles)
-              saveDraft(name, phone, education, joinDate, newFiles, hrContact)
+              saveDraft(name, phone, education, joinDate, newFiles, hrContact, bankBranch)
 
               if (verification) {
                 setVerificationResults(prev => new Map(prev).set(fileKey, verification))
@@ -531,7 +537,7 @@ const IndexPage = () => {
       next.delete(fileKey)
       return next
     })
-    saveDraft(name, phone, education, joinDate, remainingFiles, hrContact)
+    saveDraft(name, phone, education, joinDate, remainingFiles, hrContact, bankBranch)
   }
 
   // 处理校验未通过 - 仍然提交（申诉覆盖）
@@ -550,7 +556,7 @@ const IndexPage = () => {
         verificationOverride: true,
       }]
       setUploadedFiles(newFiles)
-      saveDraft(name, phone, education, joinDate, newFiles, hrContact)
+      saveDraft(name, phone, education, joinDate, newFiles, hrContact, bankBranch)
       Taro.showToast({ title: '已添加（待HR确认）', icon: 'none' })
     }
     setShowVerifyFailModal(false)
@@ -803,6 +809,7 @@ const IndexPage = () => {
     if (!education) { Taro.showToast({ title: '请选择学历', icon: 'none' }); return }
     if (!joinDate) { Taro.showToast({ title: '请选择入职日期', icon: 'none' }); return }
     if (!hrContact) { Taro.showToast({ title: '请选择对接HR', icon: 'none' }); return }
+    if (!bankBranch.trim()) { Taro.showToast({ title: '请填写开户行信息', icon: 'none' }); return }
 
     // 校验身份证和离职证明
     const missingFiles: string[] = []
@@ -861,7 +868,7 @@ const IndexPage = () => {
         url: '/api/hr/employees',
         method: 'POST',
         data: {
-          name, phone, education, join_date: joinDate, hr_contact: hrContact,
+          name, phone, education, join_date: joinDate, hr_contact: hrContact, bank_branch: bankBranch,
           files: [
             ...uploadedFiles.map(f => ({
               fileType: f.fileType,
@@ -887,7 +894,7 @@ const IndexPage = () => {
       console.log('提交响应: code=', res.data?.code)
       if (res.data.code === 200) {
         clearDraft()
-        const submittedEmployee = { name, phone, education, join_date: joinDate, hr_contact: hrContact, status: 'submitted' }
+        const submittedEmployee = { name, phone, education, join_date: joinDate, hr_contact: hrContact, bank_branch: bankBranch, status: 'submitted' }
         const submittedFiles = [
           ...uploadedFiles.map(f => ({
             file_type: f.fileType,
@@ -1433,9 +1440,32 @@ const IndexPage = () => {
           {/* 银行卡 */}
           <View className="mb-2">
             <Text className="block text-base font-medium text-gray-900 mb-3">银行卡（必传）</Text>
+
+            {/* 开户行 */}
+            <View className="mb-3">
+              <Text className="block text-sm text-gray-600 mb-1">开户行 <Text className="text-red-500">*</Text></Text>
+              <View className="bg-gray-50 rounded-xl px-4 py-3">
+                <Input
+                  className="w-full bg-transparent"
+                  placeholder="请输入开户行信息，如：中国工商银行北京朝阳支行"
+                  value={bankBranch}
+                  onInput={(e) => {
+                    setBankBranch(e.detail.value)
+                    saveDraft(name, phone, education, joinDate, undefined, hrContact, e.detail.value)
+                  }}
+                />
+              </View>
+            </View>
+
             <View className="grid grid-cols-2 gap-3">
               {renderSlot('bank_card_front', '银行卡正面')}
               {renderSlot('bank_card_back', '银行卡反面')}
+            </View>
+
+            {/* 银行流水（可选） */}
+            <View className="mt-3">
+              <Text className="block text-sm text-gray-600 mb-2">银行流水（选传）</Text>
+              {renderSlot('bank_statement', '银行流水')}
             </View>
           </View>
         </CardContent>

@@ -15,6 +15,7 @@ interface CreateEmployeeDto {
   education: string
   join_date: string
   hr_contact: string
+  bank_branch?: string
 }
 
 interface VerifyResult {
@@ -178,6 +179,7 @@ export class HrService {
           education: dto.education,
           join_date: dto.join_date,
           hr_contact: dto.hr_contact,
+          bank_branch: dto.bank_branch,
           status: 'submitted',
         })
         .eq('id', existing.employee.id)
@@ -201,6 +203,7 @@ export class HrService {
         education: dto.education,
         join_date: dto.join_date,
         hr_contact: dto.hr_contact,
+        bank_branch: dto.bank_branch,
         status: 'submitted',
       })
       .select()
