@@ -262,7 +262,7 @@ export default function HrAdminPage() {
         url: '/api/hr/auth/change-password',
         method: 'POST',
         header: { Authorization: `Bearer ${token}` },
-        data: { oldPassword: oldPwd, newPassword: newPwd },
+        data: { currentPassword: oldPwd, newPassword: newPwd },
       })
       if (res.data.code === 200) {
         Taro.showToast({ title: '密码修改成功，请重新登录', icon: 'none' })
