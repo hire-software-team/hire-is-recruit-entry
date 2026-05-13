@@ -646,8 +646,8 @@ const HrAdminPage = () => {
 
         return (
           <View className="bg-gray-50 min-h-screen">
-            {/* 顶部栏 */}
-            <View className="bg-white border-b border-gray-200 p-4">
+            {/* 顶部栏 - sticky */}
+            <View className="bg-white border-b border-gray-200 p-4 sticky top-0 z-50">
               <View className="flex items-center gap-3">
                 <View onClick={() => exitDetailView()}>
                   <ArrowLeft size={20} color="#374151" />
