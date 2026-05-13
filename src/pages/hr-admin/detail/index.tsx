@@ -253,22 +253,32 @@ export default function HrAdminDetail() {
     if (!detail) return
     try {
       Taro.showLoading({ title: '打包下载中...' })
-      const res = await Network.request({
-        url: `/api/hr/employees/${detail.employee.id}/download`,
+      const downloadUrl = `/api/hr/employees/${detail.employee.id}/download`
+      const res = await Network.downloadFile({
+        url: downloadUrl,
         header: { Authorization: `Bearer ${token}` },
-        responseType: 'arraybuffer',
       })
       Taro.hideLoading()
-      // @ts-ignore
-      const blob = new Blob([res.data], { type: 'application/zip' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${detail.employee.name}_资料.zip`
-      a.click()
-      URL.revokeObjectURL(url)
+      if (res.statusCode === 200) {
+        const tempFilePath = res.tempFilePath
+        const isH5 = Taro.getEnv() === Taro.ENV_TYPE.WEB
+        if (isH5) {
+          // H5端: tempFilePath是blob URL, 创建a标签下载
+          const a = document.createElement('a')
+          a.href = tempFilePath
+          a.download = `${detail.employee.name}_入职资料.zip`
+          a.click()
+        } else {
+          // 小程序端: 保存到本地或打开
+          await Taro.saveFile({ tempFilePath })
+          Taro.showToast({ title: '已保存到本地', icon: 'success' })
+        }
+      } else {
+        Taro.showToast({ title: '下载失败', icon: 'none' })
+      }
     } catch (error) {
       Taro.hideLoading()
+      console.log('下载错误:', error)
       Taro.showToast({ title: '下载失败', icon: 'none' })
     }
   }
