@@ -974,6 +974,47 @@ export class HrService {
     }
   }
 
+  /** 一键清空所有自动锁定状态（保留手动锁定） */
+  async clearAllAutoLocks(): Promise<{ clearedViewers: number; unlockedEmployees: number }> {
+    // 1. 清空所有 viewer 记录
+    const { error: viewerError } = await this.supabase
+      .from('employee_viewers')
+      .delete()
+      .neq('admin_id', 0) // 删除所有记录（占位条件）
+
+    if (viewerError) {
+      throw new Error(`清空viewer记录失败: ${viewerError.message}`)
+    }
+
+    // 统计删除了多少条 viewer
+    const { count: viewerCount } = await this.supabase
+      .from('employee_viewers')
+      .select('*', { count: 'exact', head: true })
+
+    // 2. 先统计 auto 锁定的员工数
+    const { count: autoLockCount } = await this.supabase
+      .from('employees')
+      .select('*', { count: 'exact', head: true })
+      .eq('lock_source', 'auto')
+      .eq('status', 'locked')
+
+    // 解锁所有 lock_source=auto 的员工
+    const { error: unlockError } = await this.supabase
+      .from('employees')
+      .update({ status: 'submitted', lock_source: null, locked_by: null, locked_at: null, viewing_count: 0 })
+      .eq('lock_source', 'auto')
+      .eq('status', 'locked')
+
+    if (unlockError) {
+      throw new Error(`解锁员工失败: ${unlockError.message}`)
+    }
+
+    return {
+      clearedViewers: viewerCount ?? 0,
+      unlockedEmployees: autoLockCount ?? 0,
+    }
+  }
+
   /** 构建员工查询的 HR 范围过滤条件 */
   buildHrContactFilter(role: string, hrContacts: string[]): string[] | null {
     if (role === 'level1') return null // null 表示不过滤，返回全部

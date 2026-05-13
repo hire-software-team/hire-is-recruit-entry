@@ -858,4 +858,17 @@ export class HrController {
       throw new BadRequestException(error.message || '修改失败')
     }
   }
+
+  /** 一键清空所有自动锁定状态（仅 level1） */
+  @Post('clear-locks')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(200)
+  async clearAllLocks(@Req() req: any) {
+    const { role } = req.user
+    if (role !== 'level1') {
+      throw new ForbiddenException('仅一级管理员可清空锁定状态')
+    }
+    const result = await this.hrService.clearAllAutoLocks()
+    return { code: 200, msg: '清空成功', data: result }
+  }
 }

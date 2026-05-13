@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Search, Shield, KeyRound, Users, LogIn, User, Phone, Calendar, Trash2, Lock, Eye } from 'lucide-react-taro'
+import { Search, Shield, KeyRound, Users, LogIn, User, Phone, Calendar, Trash2, Lock, LockOpen, Eye } from 'lucide-react-taro'
 
 const STATUS_MAP: Record<string, { label: string; className: string }> = {
   submitted: { label: '待复核', className: 'bg-yellow-100 text-yellow-800' },
@@ -278,6 +278,35 @@ export default function HrAdminPage() {
     }
   }
 
+  const handleClearLocks = async () => {
+    const res = await Taro.showModal({
+      title: '确认清空',
+      content: '确定要清空所有因查看而自动锁定的员工状态吗？手动锁定的员工不受影响。',
+    })
+    if (!res.confirm) return
+
+    try {
+      const result = await Network.request({
+        url: '/api/hr/clear-locks',
+        method: 'POST',
+        header: { Authorization: `Bearer ${token}` },
+      })
+      if (result.data.code === 200) {
+        const { unlockedEmployees, clearedViewers } = result.data.data
+        Taro.showToast({
+          title: `已解锁${unlockedEmployees}人，清除${clearedViewers}条记录`,
+          icon: 'none',
+          duration: 2000,
+        })
+        fetchEmployees(token)
+      } else {
+        Taro.showToast({ title: result.data.message || result.data.msg || '操作失败', icon: 'none' })
+      }
+    } catch (error: any) {
+      Taro.showToast({ title: error?.data?.message || error?.message || '操作失败', icon: 'none' })
+    }
+  }
+
   const filteredEmployees = employees.filter(e =>
     e.name.includes(searchQuery) || e.phone?.includes(searchQuery)
   )
@@ -436,6 +465,23 @@ export default function HrAdminPage() {
                   </View>
                 ))
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="mt-4">
+            <CardContent className="p-4">
+              <Text className="block text-base font-semibold mb-2">锁定管理</Text>
+              <Text className="block text-sm text-gray-500 mb-3">
+                清空所有因管理员查看而自动锁定的员工状态（手动锁定不受影响）
+              </Text>
+              <Button
+                variant="outline"
+                className="w-full border-amber-300"
+                onClick={handleClearLocks}
+              >
+                <LockOpen size={16} color="#d97706" className="mr-2" />
+                <Text>清空所有自动锁定</Text>
+              </Button>
             </CardContent>
           </Card>
         </View>
