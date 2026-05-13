@@ -1097,7 +1097,16 @@ const IndexPage = () => {
             <Text className="block text-xl font-bold text-gray-900 mb-1">我的入职资料</Text>
             <Text className="block text-sm text-gray-600">您已成功提交入职资料</Text>
           </View>
-          <Button size="sm" variant="outline" onClick={() => Taro.navigateTo({ url: '/pages/hr-admin/index' })}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              Taro.navigateTo({ url: '/pages/hr-admin/index' }).catch(() => {
+                Taro.showToast({ title: '页面加载失败，正在刷新重试', icon: 'none', duration: 1500 })
+                setTimeout(() => window.location.reload(), 1500)
+              })
+            }}
+          >
             <Settings size={14} color="#6b7280" className="mr-1" />
             HR管理
           </Button>
@@ -1302,7 +1311,16 @@ const IndexPage = () => {
           <Text className="block text-xl font-bold text-gray-900 mb-1">新员工资料上传</Text>
           <Text className="block text-sm text-gray-600">请填写基本信息并上传相关资料</Text>
         </View>
-        <Button size="sm" variant="outline" onClick={() => Taro.navigateTo({ url: '/pages/hr-admin/index' })}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            Taro.navigateTo({ url: '/pages/hr-admin/index' }).catch(() => {
+              Taro.showToast({ title: '页面加载失败，正在刷新重试', icon: 'none', duration: 1500 })
+              setTimeout(() => window.location.reload(), 1500)
+            })
+          }}
+        >
           <Settings size={14} color="#6b7280" className="mr-1" />
           HR管理
         </Button>
