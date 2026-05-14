@@ -13,7 +13,7 @@ export function devDebug() {
       const envVersion = accountInfo.miniProgram.envVersion;
       console.log('[Debug] envVersion:', envVersion);
 
-      if (envVersion !== 'release') {
+      if (envVersion === 'develop') {
         Taro.setEnableDebug({ enableDebug: true });
       }
     } catch (error) {
