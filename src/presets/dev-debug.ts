@@ -15,6 +15,9 @@ export function devDebug() {
 
       if (envVersion === 'develop') {
         Taro.setEnableDebug({ enableDebug: true });
+      } else {
+        // 显式关闭调试模式，清除之前 develop 版本持久化的调试状态
+        Taro.setEnableDebug({ enableDebug: false });
       }
     } catch (error) {
       console.error('[Debug] 开启调试模式失败:', error);
