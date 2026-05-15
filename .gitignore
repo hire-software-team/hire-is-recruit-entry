@@ -38,7 +38,7 @@ pnpm-debug.log*
 .DS_Store
 
 # Key
-# key/
+key/
 
 .coze
 .cozeproj/
